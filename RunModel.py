@@ -2,7 +2,7 @@
 on them.
 The data files imported to this file should have undergone prior analysis of which rows are relevant to keep, as no rows are
 changed in this file. 
-"""
+""" 
 
 #%% 
 # -------------  Importing packages and functions  -------------
@@ -290,7 +290,7 @@ print("Imbalance Ratio:{}".format(round(np.sum(y_train_OS[targetName] == 1)/np.s
 """ Only the DS data is used to HP tune as the OS should be done after the val-train split in the k-CV. 
 The values deciding the level of OS are used to make the OS identical to the one used in the remainder of this script. """
 if optimizeHyperParameters: 
-    from HyperParameterTuning import modelClassifierDic, modelRegressorDic, modelClassifierDic_fast, modelRegressorDic_fast
+    from MLFunctions.HyperParameterTuning import modelClassifierDic, modelRegressorDic, modelClassifierDic_fast, modelRegressorDic_fast
     if modelType == "Classification": 
         if fastHPTuning:
             modelDic = modelClassifierDic_fast 
