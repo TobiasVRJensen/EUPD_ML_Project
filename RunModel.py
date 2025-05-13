@@ -61,12 +61,12 @@ downSampler = "KMean" # 'KMean' or 'RP'
 DSLevel = 5000
 overSampler = "ROS" # 'ROS' or 'ExpVSG' or 'GAN' 
 runGAN = False
-desiredImbRatio = 1/2 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
+desiredImbRatio = 1/5 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
 optimizeHyperParameters = True 
 fastHPTuning = True 
 updateHpOfBestModel = False
-featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Stål', 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstørv','SoilType_ML - Moræneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
-HPTuningName = 'WithJoints'
+featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Stål']#, 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstørv','SoilType_ML - Moræneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
+HPTuningName = 'WithoutJoints'
 
 # modelType and X and y depending on the targetName: 
 if targetName == "nFaults": 
@@ -290,6 +290,10 @@ print("Imbalance Ratio:{}".format(round(np.sum(y_train_OS[targetName] == 1)/np.s
 
 
 #%% 
+
+
+
+
 # ---------  Hyper Parameter Tuning  ---------
 """ Only the DS data is used to HP tune as the OS should be done after the val-train split in the k-CV. 
 The values deciding the level of OS are used to make the OS identical to the one used in the remainder of this script. """
