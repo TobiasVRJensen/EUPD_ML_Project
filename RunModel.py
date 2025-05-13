@@ -5,6 +5,7 @@ changed in this file.
 """ 
 
 #%% 
+
 # -------------  Importing packages and functions  -------------
 import pandas as pd
 import numpy as np
@@ -26,6 +27,9 @@ from sklearn.pipeline import Pipeline, make_pipeline
 # from imblearn.pipeline import Pipeline
 # from imblearn.over_sampling import RandomOverSampler, SMOTE
 
+import sys
+sys.path.append('C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Machine Learning')
+
 from MLFunctions.utilities import * 
 from MLFunctions.data_cleaning import *
 from MLFunctions.oversamplers import * 
@@ -33,6 +37,7 @@ from MLFunctions.models import *
 from MLFunctions.visualization import * 
 from MLFunctions.featureEngineering import * 
 from MLFunctions.GAN import *
+
 
 
 #%% 
@@ -47,21 +52,19 @@ header = dataTotal.columns
 
 #%% 
 # ---------  Defines the model parameters  --------- 
-# TODO: 
-    # Kobl rør og havvarier sammen, og i stedet for fault occurance, skal jeg implementere antallet af fejl i røret. 
-    # Lav modellen som både classification og Regression(Hvor outputtet er det predictede antal af fejl)
-
 # Defines which parts of the model should be run and with which parameters 
-targetName = "nFaults" #"FaultOccurance" or "Age" or "nFaults"
+targetName = "FaultOccurance" #"FaultOccurance" or "Age" or "nFaults"
+# combinePipes = True # Whether to combine the Havari 
 doFeatureEngineering = False
 showBorutaScore = False # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
 downSampler = "KMean" # 'KMean' or 'RP' 
 DSLevel = 5000
 overSampler = "ROS" # 'ROS' or 'ExpVSG' or 'GAN' 
 runGAN = False
-desiredImbRatio = 1/20 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
+desiredImbRatio = 1/2 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
 optimizeHyperParameters = True 
 fastHPTuning = True 
+updateHpOfBestModel = False
 featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Stål', 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstørv','SoilType_ML - Moræneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
 HPTuningName = 'WithJoints'
 
@@ -261,7 +264,8 @@ elif downSampler == 'KMean':
     X_train_DS, y_train_DS = kMeansClusteringDS(X_train_RelFeat,y_train,n_clusters=DSLevel,max_iter=300,Plot=True,targetname=targetName) 
 else: 
     raise ValueError("The down sampling method is incorrect. '{}' was given.".format(downSampler))
-
+# Changes the ID df to only have the downsampled ID's 
+ID_train_DS = ID_train[X_train_DS.index]
 
 #%% 
 # ---------  Oversampling  ---------
@@ -289,6 +293,7 @@ print("Imbalance Ratio:{}".format(round(np.sum(y_train_OS[targetName] == 1)/np.s
 # ---------  Hyper Parameter Tuning  ---------
 """ Only the DS data is used to HP tune as the OS should be done after the val-train split in the k-CV. 
 The values deciding the level of OS are used to make the OS identical to the one used in the remainder of this script. """
+saveName_HPTuning="HPTuningQuick_{},{}_{}={},{}={}_{}".format(modelTypeName,targetName[0:3],downSampler,DSLevel,overSampler,OSLevel,HPTuningName)
 if optimizeHyperParameters: 
     from MLFunctions.HyperParameterTuning import modelClassifierDic, modelRegressorDic, modelClassifierDic_fast, modelRegressorDic_fast
     if modelType == "Classification": 
@@ -301,9 +306,21 @@ if optimizeHyperParameters:
             modelDic = modelRegressorDic_fast 
         else:
             modelDic = modelRegressorDic
-    kCrossValidation(X_train_DS, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN, X0_test=X_test_relFeat,y0_test=y_test,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename="HPTuningQuick_{},{}_{}={},{}={}_{}".format(modelTypeName,targetName[0:3],downSampler,DSLevel,overSampler,OSLevel,HPTuningName))
+    HPTuning = kCrossValidation(X_train_DS, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN,pipeLength_total,ID_train_DS,ID_test, X0_test=X_test_relFeat,y0_test=y_test,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename=saveName_HPTuning)
+else: 
+    try:
+        HPTuning = pd.read_excel("{}\\Brønshøj\\k-CrossCalidation\\{}.xlsx".format(resultsLoc,saveName_HPTuning))
+    except: 
+        raise ValueError("HPTuning with these parameters has not been performed before. Please set optimizeHyperParameters to True.")
+# Automatically updates the bestModel to contain the best hyper parameters: 
+if updateHpOfBestModel: 
+    HPTuning_bestAUC = HPTuning[HPTuning['AUCTestScores'] == np.max(HPTuning['AUCTestScores'])]
 
-
+    bestHps = HPTuning_bestAUC[HPTuning_bestAUC.loc[:, :'Model'].columns[:-1]]
+    # TODO: 
+    # Sorter i rækkerne, så det kun er 1 model, som er den bedste (Vurder hvilke valuerings metrics der er de vigtigste)
+    # Ret denne funktion til, så den automatisk læser hvilken model er den bedste fra Excel arket, og opdaterer dens HPs. 
+    
 #%% 
 # ---------  Plots Results of 'bestModel'  ---------
 X_train_final, y_train_final = X_train_OS,y_train_OS
@@ -344,7 +361,7 @@ if modelType == "Classification":
     y_pred_perc_df = pd.DataFrame({"Pred%":y_pred_perc})
     PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
 
-    # Ændrer cur-off threshold (phi), og plotter CM igen. 
+    # Ændrer cut-off threshold (phi), og plotter CM igen. 
     phi = 0.80 # Cut-off threshold 
     y_pred_phi = y_pred
     y_pred_phi[y_pred_perc < phi] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
@@ -352,11 +369,22 @@ if modelType == "Classification":
     
     # Plots the y_pred_perc Distribution: 
     Ploty_percDistribution(y_pred_perc)
+    y_havari_pred_perc = y_pred_perc[y_test_final[targetName] == 1]
+    Ploty_percDistribution(y_havari_pred_perc,title='Distribution of Likelyhood of breaks for Havari')
     
     # Plotter resultaterne som funktion af 2 af featuerne
     # ScatterTestWithDB(X_train_ROS,  y_train_ROS, X_test_final, y_test_final, modelWith2Feat,feat1Name,feat2Name,Title="Targets")
 elif targetName == 'nFaults': 
     y_pred, Model, R2_test, R2_train = TestRegressionModel(bestModel,X_train_final,y_train_final,X_test_final,y_test_final)
+    print("R2 (test): {} " \
+    "R2 (train): {}".format(round(R2_test,2),round(R2_train,2)))
+    # Visualize results: 
+    plt.scatter(range(len(y_pred[targetName])),y_pred[targetName])
+
+    # Length capture vs Fault capture: 
+    # y_test_final_withID = pd.concat([ID_test,y_test_final],axis=1)
+    # y_pred_perc_df = pd.DataFrame({"Pred%":y_pred_perc})
+    # PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
 
 
 
