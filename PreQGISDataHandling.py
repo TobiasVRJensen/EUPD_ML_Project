@@ -7,7 +7,7 @@ import numpy as np
 folderLoc = "C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Data"
 MappedDataLoc = "{}\\Kortdata".format(folderLoc)
 data_WaterLevel = pd.read_csv("{}\\Samples and Measurements, Water levels\\WaterLevels.csv".format(MappedDataLoc))
-data_WaterLevel_Brøns = pd.read_excel("{}\\Samples and Measurements, Water levels\\GWL_KunBrøns.xlsx".format(MappedDataLoc))
+data_WaterLevel_Broens = pd.read_excel("{}\\Samples and Measurements, Water levels\\GWL_KunBroens.xlsx".format(MappedDataLoc))
 # data_WaterCompoundGroup = pd.read_csv("{}\\Groundwater, Compounds\\GW_CompoundGroups.csv".format(MappedDataLoc))
 # data_WaterCompoundGroup_Excel = pd.read_excel("{}\\Groundwater, Compounds\\GW_CompoundGroups_ExcelData.xlsx".format(MappedDataLoc))
 data_SoilCG_Metals = pd.read_excel("{}\\Samples and Measurements, Soailair samples from boreholes\\SoilSamples_Metals.xlsx".format(MappedDataLoc))
@@ -62,19 +62,19 @@ def FilterGWLbyMonths(df0,cdate:str,cGWL:str,keeplist:list,input:str="csv"):
         dfout = dfout[~dfout[seasonNames[i]].isna()]
         dfout.to_csv("{}\\Samples and Measurements, Water levels\\{}.csv".format(MappedDataLoc,seasonNames[i]))
 # FilterGWLbyMonths(data_WaterLevel,"dato_foers","label_hidd",["xutm32eure","yutm32eure"])
-FilterGWLbyMonths(data_WaterLevel_Brøns,"Dato seneste","Vsp mtu seneste",["Xutm32euref89","Yutm32euref89"],input="Excel")
+FilterGWLbyMonths(data_WaterLevel_Broens,"Dato seneste","Vsp mtu seneste",["Xutm32euref89","Yutm32euref89"],input="Excel")
 
 def ColorMap(df0,ccolor): 
     colormap = {"255 51 255":"LightPurple","153 0 153":"Purple","102 0 102":"DarkPurple","0 255 0":"Green","0 0 255":"Blue","255 125 0":"Orange","255 255 0":"Yellow","255 0 0":"Red"}
     df0[ccolor] = df0[ccolor].map(colormap) # Rewrites rgb codes to color. 
     return df0
 
-# FilterSoilCG før ændring fra grupperede kontamineringsgrupper til at hver kontaminering er for sig. 
+# FilterSoilCG foer ændring fra grupperede kontamineringsgrupper til at hver kontaminering er for sig. 
 # def FilterSoilCG(df0,cjord:str="Art",calder:str="Alder",ccolor:str="Rgb",cstofgruppe:str="Stofgruppe",celement:str="Stof",relevantelements:list = [],keeplist:list=[]): 
-#     """ Filtrerer jordprøvedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
+#     """ Filtrerer jordproevedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
 #     input: pd.df, strings med kolonnenavne, liste med relevante kolonner, liste med relevante elementer"""
 #     # Mergers the two datasets, so only the data points with all the relevant information are used: 
-#     df0 = df0[df0[cjord] == "BJORD"] # Vil kun have jord undersøgelser med
+#     df0 = df0[df0[cjord] == "BJORD"] # Vil kun have jord undersoegelser med
 #     df0 = df0[df0[calder] <= 24] # Vil ikke have for gamle data med 
 #     contaminationMap = {"Orange":1,"Red":2,"LightPurple":3,"Purple":4,"DarkPurple":5} # Defines badness level of contamination, 5 is worst
 #     df0 = ColorMap(df0,ccolor) # Rewrites all rgb codes to color
@@ -85,18 +85,18 @@ def ColorMap(df0,ccolor):
 #     if keeplist != []: 
 #         df0 = df0[keeplist]
 #     return df0
-# SoilCG_Metals = FilterSoilCG(data_SoilCG_Metals, relevantelements=["Bly","Kviksølv","Zink"],keeplist=["ID","DGU nr","Age","CompoundGroup","Compound","ContaminationLevel","X_UTM","Y_UTM"])
+# SoilCG_Metals = FilterSoilCG(data_SoilCG_Metals, relevantelements=["Bly","Kviksoelv","Zink"],keeplist=["ID","DGU nr","Age","CompoundGroup","Compound","ContaminationLevel","X_UTM","Y_UTM"])
 # # SoilCG_OrganicPol = FilterSoilCG(data_SoilCG_OrganicPol)
 # SoilCG_Metals.to_csv("{}\\Samples and Measurements, Soailair samples from boreholes\\SoilCG_Metals.csv".format(MappedDataLoc))
 # # SoilCG_OrganicPol.to_csv("{}\\Groundwater, Compounds\\SoilCG_OrganicMicroPolution.csv".format(MappedDataLoc))
 
 # Hold alle kontaminants for sig pånær sæbe  
-# Indfør Kontaminaeringsværdier fromfor de eksisterende "niveauer" 
+# Indfoer Kontaminaeringsværdier fromfor de eksisterende "niveauer" 
 def FilterSoilCG(df0,cjord:str="Art",calder:str="Alder",ccolor:str="Rgb",cstofgruppe:str="Stofgruppe",celement:str="Stof",relevantelements:list = [],keeplist:list=[]): 
-    """ Filtrerer jordprøvedataen, således at det kun er relevante stoffer der bliver taget med i modellen. Each contaminant is its own feature. 
+    """ Filtrerer jordproevedataen, således at det kun er relevante stoffer der bliver taget med i modellen. Each contaminant is its own feature. 
     input: pd.df, strings med kolonnenavne, liste med relevante kolonner, liste med relevante elementer"""
     # Merges the two datasets, so only the data points with all the relevant information are used: 
-    df0 = df0[df0[cjord] == "BJORD"] # Vil kun have jord undersøgelser med
+    df0 = df0[df0[cjord] == "BJORD"] # Vil kun have jord undersoegelser med
     df0 = df0[df0[calder] <= 34] # Vil ikke have for gamle data med 
     
     contaminationMap = {"Orange":1,"Red":2,"LightPurple":3,"Purple":4,"DarkPurple":5} # Defines badness level of contamination, 5 is worst
@@ -111,7 +111,7 @@ def FilterSoilCG(df0,cjord:str="Art",calder:str="Alder",ccolor:str="Rgb",cstofgr
         dfout = df0[df0["Compound"] == element]
         dfout.to_excel("{}\\Samples and Measurements, Soailair samples from boreholes\\SoilCG_{}.xlsx".format(MappedDataLoc,element))
     return df0
-SoilCG_Metals = FilterSoilCG(data_SoilCG_Metals, relevantelements=["Bly","Kviksølv","Zink"],keeplist=["ID","DGU nr","Age","CompoundGroup","Compound","ContaminationLevel","Contamination Amount","X_UTM","Y_UTM"])
+SoilCG_Metals = FilterSoilCG(data_SoilCG_Metals, relevantelements=["Bly","Kviksoelv","Zink"],keeplist=["ID","DGU nr","Age","CompoundGroup","Compound","ContaminationLevel","Contamination Amount","X_UTM","Y_UTM"])
 # SoilCG_OrganicPol = FilterSoilCG(data_SoilCG_OrganicPol)
 SoilCG_Metals.to_excel("{}\\Samples and Measurements, Soailair samples from boreholes\\SoilCG_Metals.xlsx".format(MappedDataLoc))
 # SoilCG_OrganicPol.to_csv("{}\\Groundwater, Compounds\\SoilCG_OrganicMicroPolution.csv".format(MappedDataLoc))
@@ -127,7 +127,7 @@ def CalcAge(df0,cage:str="dato"):
 # a = CalcAge(data_GWCG,"dato_senes")
 
 def FilterGWCG(df0,cstatus:str="status_ind",cdato:str="dato",cstofgruppe:str="stofgrup_1",celement:str="dominerend",camount:str="maengde",climit:str="graensevae",cx:str="X_UTM",cy:str="Y_UTM",relevantelements:list = [],keeplist:list=[]): 
-    """ Filtrerer GW prøvedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
+    """ Filtrerer GW proevedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
     input: pd.df, strings med kolonnenavne, liste med relevante elementer, liste med relevante kolonner"""
     df0[cdato] = df0[cdato].fillna(df0["dato_senes"]) # Some dato values are empty, so these are filled with dato values from another column
     df0 = df0[~df0[cdato].isna()]
@@ -137,8 +137,8 @@ def FilterGWCG(df0,cstatus:str="status_ind",cdato:str="dato",cstofgruppe:str="st
     df0 = df0[keeplist]
     # Sorts the corrosive compound groups into distinct files, which later will be used in QGIS
     CGdic = {"Uorganiske sporstoffer":["274 (Bly)","207 (Cyanid, total)"],
-             "Pesticider, nedbrydningsprodukter og beslægtede stoffer":"All", # THere are many different detergents, but they are for now kept as one, as I dont know which are dangerous to the 
-             "Detergenter (sæbe)":"All"} # There are only 1 type in the data. 
+             "Pesticider, nedbrydningsprodukter og beslaegtede stoffer":"All", # THere are many different detergents, but they are for now kept as one, as I dont know which are dangerous to the 
+             "Detergenter (saebe)":"All"} # There are only 1 type in the data. 
     # Makes a df all the 0 measurements 
     df0["Contamination Amount"] = df0["Contamination Amount"].fillna(0) # Blanck element rows are rows no contaminants were found
     noContdf = df0[df0["Contamination Amount"] == 0.0].copy()
@@ -156,9 +156,9 @@ def FilterGWCG(df0,cstatus:str="status_ind",cdato:str="dato",cstofgruppe:str="st
         dfCG.to_csv("{}\\GWCompoundGroups v2.0\\GW_CG_{}.csv".format(MappedDataLoc,compoundgroup))
 FilterGWCG(data_GWCG,keeplist=["ID","X_UTM","Y_UTM","Age","CompoundGroup","Compound","ContaminationLevel","Contamination Amount"])
 
-# FilterGWCG før ændring fra grupperede kontamineringsgrupper til at hver kontaminering er for sig. 
+# FilterGWCG foer ændring fra grupperede kontamineringsgrupper til at hver kontaminering er for sig. 
 # def FilterGWCG(df0,cstatus:str="status_ind",cdato:str="dato",cstofgruppe:str="stofgrup_1",celement:str="dominerend",camount:str="maengde",climit:str="graensevae",cx:str="X_UTM",cy:str="Y_UTM",relevantelements:list = [],keeplist:list=[]): 
-#     """ Filtrerer GW prøvedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
+#     """ Filtrerer GW proevedataen, således at det kun er relevante stoffer der bliver taget med i modellen og de bliver sorteres efter hvor slemt de er kontamineret
 #     input: pd.df, strings med kolonnenavne, liste med relevante elementer, liste med relevante kolonner"""
 #     df0 = df0[~df0[cdato].isna()]
 #     df0 = CalcAge(df0,cdato) # Beregner alderen og ændrer column navnet til "Age"

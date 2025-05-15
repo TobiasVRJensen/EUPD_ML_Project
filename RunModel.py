@@ -23,7 +23,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import BaggingClassifier, RandomForestClassifier, GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import accuracy_score, precision_score, recall_score, make_scorer,f1_score, ConfusionMatrixDisplay, confusion_matrix
 from sklearn.pipeline import Pipeline, make_pipeline
-
+from sklearn.base import clone
 # from imblearn.pipeline import Pipeline
 # from imblearn.over_sampling import RandomOverSampler, SMOTE
 
@@ -39,14 +39,13 @@ from MLFunctions.featureEngineering import *
 from MLFunctions.GAN import *
 
 
-
 #%% 
 # ---------  Loads data  --------- 
 folderLoc = "C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Data"
-resultsLoc= "C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Machine Learning\\\Results"
-dataTotal = pd.read_excel("{}\\HOFOR\\DataTotal_Brønshøj.xlsx".format(folderLoc))
-# HPTuningData = pd.read_excel("{}\\Brønshøj\\k-CrossValidation\\{}.xlsx".format(resultsLoc,"HyperParameterTuning - Total v2.0 - ROS")) # Loads the Hyper parameter tuning results 
-pipeLength_total = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\PipeLengths.xlsx".format(folderLoc))
+resultsLoc= "C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Machine Learning\\Results"
+dataTotal = pd.read_excel("{}\\HOFOR\\DataTotal_Broenshoej.xlsx".format(folderLoc))
+# HPTuningData = pd.read_excel("{}\\Broenshoej\\k-CrossValidation\\{}.xlsx".format(resultsLoc,"HyperParameterTuning - Total v2.0 - ROS")) # Loads the Hyper parameter tuning results 
+pipeLength_total = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths.xlsx".format(folderLoc))
 header = dataTotal.columns
 
 
@@ -55,6 +54,7 @@ header = dataTotal.columns
 # Defines which parts of the model should be run and with which parameters 
 targetName = "FaultOccurance" #"FaultOccurance" or "Age" or "nFaults"
 # combinePipes = True # Whether to combine the Havari 
+splitDataByTime = False
 doFeatureEngineering = False
 showBorutaScore = False # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
 downSampler = "KMean" # 'KMean' or 'RP' 
@@ -62,10 +62,10 @@ DSLevel = 5000
 overSampler = "ROS" # 'ROS' or 'ExpVSG' or 'GAN' 
 runGAN = False
 desiredImbRatio = 1/5 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
-optimizeHyperParameters = True 
+optimizeHyperParameters = False 
 fastHPTuning = True 
 updateHpOfBestModel = False
-featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Stål']#, 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstørv','SoilType_ML - Moræneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
+featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Steel']#, 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstoerv','SoilType_ML - Moraeneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
 HPTuningName = 'WithoutJoints'
 
 # modelType and X and y depending on the targetName: 
@@ -116,52 +116,39 @@ fileInfo = "Model:{} \nTrain size: {} \nOversampling Method: {} \nRandom state: 
 
 #%% 
 # ---------  Cleaner data  ---------
-# Fjerner værdier som ligger for langt væk fra gennemsnittet
+# Fjerner vaerdier som ligger for langt vaek fra gennemsnittet
 # X, y, strX = RemoveBadValues(X,y,featureNames)
 strX = GetstrX(X)
 if not strX.columns.empty:  
-    # Definerer kolonner der skal Label Encodes på og ranglisten af dataen fra lavest til højest. 
+    # Definerer kolonner der skal Label Encodes paa og ranglisten af dataen fra lavest til hoejest. 
     Rankings = {"RoadType": ['FootPath','Residential','tertiary','Train','secondary']} 
     X = LEX(X,Rankings) 
 
     # Labelencoder y, hvis relevant
     # y = LEY(y,targetName)
 
-    # Definerer hvilket kolonner der skal laves OneHot på  (Det er ikke nødvendigvis alle kolonner), og foretager OneHot
+    # Definerer hvilket kolonner der skal laves OneHot paa  (Det er ikke noedvendigvis alle kolonner), og foretager OneHot
     OneHotX = strX
     OneHotX = OneHotX.drop(Rankings.keys(),axis=1, errors='ignore')
     X,OneHotXColumns = OneHot(X,OneHotX.columns)
-# Redefinerer featureNames, da denne vil have ændret sig: 
+# Redefinerer featureNames, da denne vil have aendret sig: 
 featureNames_Redefined = X.columns
 
-# Implements fault clustering: 
-""" Faults Clustering should probably be done after splitting the data to train and test, and this otherwise can result in 
-the model getting a sneak peak into which data points are broken and which are not, but this adds a looooot of time to the k-CV
-algortihm."""
-X_havari = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-y_havari = y[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-X, corePoints, distances = CheckIfPointInClusterZone(X,X_havari,eps=30,min_samples=3)
-
-# Removes unnecessary columns (x- and y-coordinates), as their purpose over. The ID column will be removed after scaling
-X = X.drop(["X_UTM","Y_UTM"],axis=1)
-# X = X.drop("InFaultZone",axis=1) # Hvorfor i al verden skulle jeg have lyst til at fjerne InFaultZone? 
-X_havari_withCZ = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-X_havari_withCZ.to_excel("{}\\Brønshøj\\X{}_havari_unscaled.xlsx".format(resultsLoc,modelTypeName),index=False)
-
 if targetName == "nFaults": 
-    # Here havari data are removed id the target is nFaults 
-    rørIndexes = X[X["FaultOccurance"] == 0].index 
-    y = y.loc[rørIndexes]
-    X = X.loc[rørIndexes]    
+    # Here havari data are removed if the target is nFaults 
+    roerIndexes = X[X["FaultOccurance"] == 0].index 
+    y = y.loc[roerIndexes]
+    X = X.loc[roerIndexes]    
     X = X.drop(["FaultOccurance"], axis=1) # Now Fault Occurance have been used for the last time and it can be removes if necessary for the model.
 
 X_Manipulated = RemoveFeature(X,featurename = featureNotInModel) # Removes the un-desired feature (if any):
 
 
 #%% 
-# ---------  Splits Data into Test and Train  --------- 
+# ---------  Data Split and Fault Clustering  --------- 
 # Starts a clock: 
 startTime = time.perf_counter()
+
 
 if modelType == "Classification" or targetName == 'nFaults': 
     X_train, X_test, y_train, y_test = train_test_split(X_Manipulated,y,test_size=testSize,random_state=randState,stratify=y[targetName])
@@ -170,9 +157,53 @@ elif modelType == "Regression":
 X_train,y_train = X_train.reset_index(drop=True),y_train.reset_index(drop=True) # Resets the index after the Scaler shuffled them
 X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Resets the index after the Scaler shuffled them
 
-# Her er indexerne blevet shufflet en sidste gang, så nu kan jeg seperere ID'erne fra dem så jeg altid har hvilket ID der hører til hvilket rør/havari-rør ud fra indekset: 
+def PlotHavariYearDistribution(havariYears_df,splitYear = 2017): 
+    plt.figure(figsize=(8, 6))
+    havariYearsCounts = CountCopies(havariYears_df.copy())
+    plt.bar(havariYearsCounts["Havari Year"],havariYearsCounts["Count"]) 
+    plt.xticks([1995,2000,2005,2010,2015,2020,2025],fontsize=16)
+    print(np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] <= splitYear]),np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] <= splitYear])/np.sum(havariYearsCounts["Count"]) )
+    print(np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] >  splitYear]),np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] >  splitYear])/np.sum(havariYearsCounts["Count"]))
+    plt.show()
+
+def SplitDataByYear(X0,y0,test_size=testSize,random_state=randState): 
+    """ Splits the X- and y-dataset into test and train depending on the year """
+    Xy = pd.concat([X0,y0],axis=1)
+    if test_size == 0.5: 
+        splitYear = 2016
+    elif test_size == 0.3: 
+        splitYear = 2017 
+    Xy_train, Xy_test = Xy[Xy["Havari Year"] <= splitYear] , Xy[Xy["Havari Year"] > splitYear]
+    X_train, y_train = Xy_train.iloc[:,:-1] , Xy_train.iloc[:,-1]
+    X_test, y_test = Xy_test.iloc[:,:-1] , Xy_test.iloc[:,-1]
+
+
+
+PlotHavariYearDistribution(pd.DataFrame(X_train['Havari Year'].copy()))
+
+
+# Implements fault clustering: 
+""" Faults Clustering should probably be done after splitting the data to train and test, as this otherwise can result in 
+the model getting a sneak peak into which data points are broken and which are not, but this adds a looooot of processing 
+time - especially to the k-CV algortihm, as new cluster zones have to be created each time a new training data set is created."""
+X_havari = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
+y_havari = y[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
+if not splitDataByTime:
+    X, corePoints, distances = CheckIfPointInClusterZone(X,X_havari,eps=30,min_samples=3)
+    # X = X.drop("InFaultZone",axis=1) # Hvorfor i al verden skulle jeg have lyst til at fjerne InFaultZone? 
+    X_havari_withCZ = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
+    X_havari_withCZ.to_excel("{}\\Broenshoej\\X{}_havari_unscaled.xlsx".format(resultsLoc,modelTypeName),index=False)
+# TODO: Hvis splitDataByTime, saa har X stadig koordinater og har ikke noget FaultClluster Zones 
+
+# TODO: 
+# UNdersoeg hvor lang tid det faktisk tager at koere modellen, for eftersom jeg har opdateret den, kan jeg saa smide den i k-CV?? 
+# # opdater Fault Clustering for nuvaerende model, saa det bliver samlet hernede
+# Implementer Fault for den kommende tidsopdelte model.  
+
+
+# Her er indexerne blevet shufflet en sidste gang, saa nu kan jeg seperere ID'erne fra dem saa jeg altid har hvilket ID der hoerer til hvilket roer/havari-roer ud fra indekset: 
 ID_train, ID_test = X_train.iloc[:,0].copy(),X_test.iloc[:,0].copy()
-X_train, X_test = X_train.drop(["ID"],axis=1) , X_test.drop(["ID"],axis=1) # ID'erne droppes
+X_train, X_test = X_train.drop(["ID","X_UTM","Y_UTM"],axis=1) , X_test.drop(["ID","X_UTM","Y_UTM"],axis=1) # Removes some columns, as their purpose over. 
 
 # Samler testdataen, da det er relevant til regressionsmodellen. 
 data_test = pd.concat([X_test,y_test],axis=1)
@@ -206,15 +237,15 @@ if overSampler == "GAN":
     elif downSampler == "RP":
         RFC =  RandomForestClassifier(n_estimators=4,max_depth=4,max_samples=0.7,warm_start=True,criterion='entropy', oob_score=False)
 elif overSampler == "ROS": 
-    if downSampler == "KMean":
+    if downSampler == "KMean": 
         # RFC  =  RandomForestClassifier(n_estimators=10,max_depth=5,max_samples=0.6,warm_start=True,criterion='log_loss', oob_score=False)
         RFC  =  RandomForestClassifier(n_estimators=8,max_depth=7,max_samples=0.5,warm_start=True,criterion='entropy', oob_score=False)
-    elif downSampler == "RP":
+    elif downSampler == "RP": 
         RFC =  RandomForestClassifier(n_estimators=4,max_depth=4,max_samples=0.8,warm_start=True,criterion='entropy', oob_score=False)
 elif overSampler == "ExpVSG": 
-    if downSampler == "KMean":
+    if downSampler == "KMean": 
         RFC  =  RandomForestClassifier(n_estimators=8,max_depth=8,max_samples=0.6,warm_start=True,criterion='entropy', oob_score=False)
-    elif downSampler == "RP":
+    elif downSampler == "RP": 
         RFC =  RandomForestClassifier(n_estimators=4,max_depth=4,max_samples=0.7,warm_start=True,criterion='log_loss', oob_score=False)
 
 # Definerer Regressors:
@@ -228,7 +259,7 @@ RFR = RandomForestRegressor(n_estimators=forestSize, oob_score=False)
 XGBR = xgb.XGBRegressor(n_estimators=numberOfEstimatorsXGB,max_depth=2, learning_rate=1)
 
 # Defines the best model: 
-bestModel = globals()[bestModelName]
+bestModel = clone(globals()[bestModelName])
 print("Model used: {}".format(bestModelName))
 
 
@@ -238,19 +269,19 @@ print("Model used: {}".format(bestModelName))
 if doFeatureEngineering: 
     ite = '2.0' 
     if modelType == "Classification":
-        featuresToKeep = FeatureEngineering_kBest(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
-        print("kBest:",featuresToKeep)
-        featuresToKeep = FeatureEngineering_RFE(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
-        print("RFE:",featuresToKeep)
+        featuresToKeep_kBest = FeatureEngineering_kBest(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
+        print("kBest:",featuresToKeep_kBest)
+        featuresToKeep_RFE = FeatureEngineering_RFE(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
+        print("RFE:",featuresToKeep_RFE)
     bestModel_coldStart = clone(bestModel)
     setattr(bestModel_coldStart,'warm_start',False) # Brouta does not work when 'warm_start' is True, thus it is changed to False
-    featuresToKeep,featureRankings, evaluationScore_Boruta, borutaScore = FeatureEngineering_Boruta(X_train,y_train,RFC_coldStart,estimatorName="RFC_Cold{}".format(ite))
-    print("Boruta:",featuresToKeep,evaluationScore_Boruta)
+    featuresToKeep_boruta,featureRankings, evaluationScore_Boruta, borutaScore = FeatureEngineering_Boruta(X_train,y_train,RFC_coldStart,estimatorName="RFC_Cold{}".format(ite))
+    print("Boruta:",featuresToKeep_boruta,evaluationScore_Boruta)
     if showBorutaScore: 
         dfBorutaScores = pd.DataFrame(borutaScore)
         dfBorutaScores.columns = X_train.columns
         dfBorutaScores = add_mean_row(dfBorutaScores)
-        dfBorutaScores.to_excel("{}\\Brønshøj\\FeatureImportance\\Boruta\\BorutaScores.xlsx".format(resultsLoc),index=False)
+        dfBorutaScores.to_excel("{}\\Broenshoej\\FeatureImportance\\Boruta\\BorutaScores.xlsx".format(resultsLoc),index=False)
 
 # Removing irelevant features:
 X_train_RelFeat,X_test_relFeat = X_train[featuresToKeep],X_test[featuresToKeep]
@@ -269,17 +300,17 @@ ID_train_DS = ID_train[X_train_DS.index]
 
 #%% 
 # ---------  Oversampling  ---------
-# Oversampler de underrepræsenterede data: 
+# Oversampler de underrepraesenterede data: 
 X_train_havari_DS = X_train_DS[y_train_DS[targetName] == minorityValue]
-X_train_rør_DS    = X_train_DS[y_train_DS[targetName] == 0]
-nUnbrokenDS = X_train_rør_DS.shape[0] # number of unbroken pipes present in the data set after DS. 
+X_train_roer_DS    = X_train_DS[y_train_DS[targetName] == 0]
+nUnbrokenDS = X_train_roer_DS.shape[0] # number of unbroken pipes present in the data set after DS. 
 OSTimes = int((nUnbrokenDS*desiredImbRatio-nBrokenPipes)/nBrokenPipes) # Defines the number of nBroken pipes skal virtuelt genereres. 1 means the same number as the real samples, 2 means twice as many etc. Calculated from ImbRatio
 OSLevel = nBrokenPipes*OSTimes  # Defines the number of virtual samles present after OS 
 
 if runGAN:
     X_GAN = RunGAN(X_train_havari_DS,overSampleLevel=10,Plot=True,nEpochs=15000,saveName="x10,15000")
 else: 
-    X_GAN = pd.read_excel("{}\\Brønshøj\\GAN\\fakeSamples_Classx10,15000.xlsx".format(resultsLoc))
+    X_GAN = pd.read_excel("{}\\Broenshoej\\GAN\\fakeSamples_Classx10,15000.xlsx".format(resultsLoc))
     X_GAN = X_GAN[:OSLevel]
 print("Number of majoritysamples: {}".format(y_train_DS[y_train_DS[targetName] == majorityValue].shape[0]))
 
@@ -290,10 +321,6 @@ print("Imbalance Ratio:{}".format(round(np.sum(y_train_OS[targetName] == 1)/np.s
 
 
 #%% 
-
-
-
-
 # ---------  Hyper Parameter Tuning  ---------
 """ Only the DS data is used to HP tune as the OS should be done after the val-train split in the k-CV. 
 The values deciding the level of OS are used to make the OS identical to the one used in the remainder of this script. """
@@ -312,26 +339,23 @@ if optimizeHyperParameters:
             modelDic = modelRegressorDic
     HPTuning = kCrossValidation(X_train_DS, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN,pipeLength_total,ID_train_DS,ID_test, X0_test=X_test_relFeat,y0_test=y_test,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename=saveName_HPTuning)
 else: 
-    try:
-        HPTuning = pd.read_excel("{}\\Brønshøj\\k-CrossCalidation\\{}.xlsx".format(resultsLoc,saveName_HPTuning))
-    except: 
-        raise ValueError("HPTuning with these parameters has not been performed before. Please set optimizeHyperParameters to True.")
-# Automatically updates the bestModel to contain the best hyper parameters: 
-if updateHpOfBestModel: 
-    HPTuning_bestAUC = HPTuning[HPTuning['AUCTestScores'] == np.max(HPTuning['AUCTestScores'])]
+    if updateHpOfBestModel: # If this is True, then HPTuning must be defined, which is the reason for the logic setup
+        try:
+            HPTuning = pd.read_excel("{}\\Broenshoej\\k-CrossValidation\\{}.xlsx".format(resultsLoc,saveName_HPTuning))
+        except: 
+            raise ValueError("HPTuning with these parameters has not been performed before. Please set optimizeHyperParameters to True.")
+if updateHpOfBestModel:  #  Automatically updates the bestModel to contain the best hyper parameters: 
+    bestModel_forAUC, bestModel_forRecall,bestModel_forPrecision, bestModel_overall = DetermineBestModel(HPTuning)
+    bestModel = clone(bestModel_forAUC)
 
-    bestHps = HPTuning_bestAUC[HPTuning_bestAUC.loc[:, :'Model'].columns[:-1]]
-    # TODO: 
-    # Sorter i rækkerne, så det kun er 1 model, som er den bedste (Vurder hvilke valuerings metrics der er de vigtigste)
-    # Ret denne funktion til, så den automatisk læser hvilken model er den bedste fra Excel arket, og opdaterer dens HPs. 
-    
+
 #%% 
 # ---------  Plots Results of 'bestModel'  ---------
 X_train_final, y_train_final = X_train_OS,y_train_OS
 X_test_final, y_test_final = X_test_relFeat, y_test
 
 if modelType == "Classification":
-    # Vælger hvilke features der skal plottes efter senere: 
+    # Vaelger hvilke features der skal plottes efter senere: 
     feat1Index = 2
     feat2Index = 3
     feat1Name = featureNames_Redefined[feat1Index]
@@ -344,6 +368,7 @@ if modelType == "Classification":
         feat2Name = "Rain" 
     # Defines the hyper parameter's of the best model:
     HPStr = FindChangedHPs(bestModel)
+    print("Model used: {}".format(bestModel))
     print("Used HPs: {}".format(HPStr))
     saveName = "{},{},{},{},{},{}={},{}={},{}".format(modelType[0:3],trainSize,randState,nFolds,featureNotInModel,downSampler,DSLevel,overSampler,OSLevel,HPStr)
 
@@ -365,16 +390,16 @@ if modelType == "Classification":
     y_pred_perc_df = pd.DataFrame({"Pred%":y_pred_perc})
     PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
 
-    # Ændrer cut-off threshold (phi), og plotter CM igen. 
+    # aendrer cut-off threshold (phi), og plotter CM igen. 
     phi = 0.80 # Cut-off threshold 
     y_pred_phi = y_pred
     y_pred_phi[y_pred_perc < phi] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
     ConfusionMatrix(y_test_final,y_pred_phi, savename = saveName,title="Recall",Normalise=None)
     
     # Plots the y_pred_perc Distribution: 
-    Ploty_percDistribution(y_pred_perc)
     y_havari_pred_perc = y_pred_perc[y_test_final[targetName] == 1]
-    Ploty_percDistribution(y_havari_pred_perc,title='Distribution of Likelyhood of breaks for Havari')
+    Ploty_percDistribution(y_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0)
+    # Ploty_percDistribution(y_havari_pred_perc,title='Distribution of Likelyhood of breaks for Havari')
     
     # Plotter resultaterne som funktion af 2 af featuerne
     # ScatterTestWithDB(X_train_ROS,  y_train_ROS, X_test_final, y_test_final, modelWith2Feat,feat1Name,feat2Name,Title="Targets")
@@ -427,7 +452,7 @@ elif targetName == "Age":
     # Feature Importance: 
     FIR = fittedRegressor.feature_importances_
     FIRdf = pd.DataFrame({"Features":X_test_final.columns, "FIR":FIR})
-    FIRdf.to_excel("{}\\Brønshøj\\HyperParameterTuning\\FIR_{}.xlsx".format(resultsLoc,"RFC"))
+    FIRdf.to_excel("{}\\Broenshoej\\HyperParameterTuning\\FIR_{}.xlsx".format(resultsLoc,"RFC"))
     # for i,fir in enumerate(FIR):
 
     #     print(X_test_final.columns[i],":",fir) 
@@ -443,7 +468,7 @@ elif targetName == "Age":
     BarplotRegressionModel(y_test_final,y_predict=y_pred,savename=saveName,R2=R2_test)
     BarplotRegressionModel(y_test_final_havari,y_predict=y_pred_havari,savename=saveName,R2=R2_test)
 
-    # Plotter alderfordelingen af de rør vi undersøger: 
+    # Plotter alderfordelingen af de roer vi undersoeger: 
     BarplotRegressionModel(pd.concat([y_test_final,y_train_OS],axis=0,ignore_index=True))
     BarplotRegressionModel(y_havari)    
 

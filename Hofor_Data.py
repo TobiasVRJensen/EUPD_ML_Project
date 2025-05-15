@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt 
 
+import sys
+sys.path.append('C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Machine Learning')
 from MLFunctions.utilities import * 
 from MLFunctions.data_cleaning import *
 from MLFunctions.oversamplers import * 
@@ -30,13 +32,13 @@ data["LedningVF_KBH"] = pd.read_excel("{}\\HOFOR\\EUDP_Ledning-VF-Aktiv.xlsx".fo
 # data["Reduktion"] = pd.read_excel("{}\\HOFOR\\EUDP_Reduktion.xlsx".format(folderLoc), sheet_name="EUDP Reduktion")
 # data["Samling"] = pd.read_excel("{}\\HOFOR\\EUDP_Samling.xlsx".format(folderLoc), sheet_name="EUDP Samling")
 # data["TunnelAlleHofor"] = pd.read_excel("{}\\HOFOR\\EUDP_Tunnel-alle-HOFOR.xlsx".format(folderLoc), sheet_name="EUDP Tunnel-alle-HOFOR")
-data["Ledninger_Brøns"] = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Ledninger og havarier fra KOX.xlsx".format(folderLoc))
-data["Havarier_Brøns"] = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Havarier.xlsx".format(folderLoc))
+data["Ledninger_Brøns"] = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Ledninger og havarier fra KOX.xlsx".format(folderLoc))
+data["Havarier_Brøns"] = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Havarier.xlsx".format(folderLoc))
 
 dataKeys = data.keys()
 
 # GISdata: 
-GisLoc = "{}\\HOFOR\\Data Brønshøj\\Raster Data".format(folderLoc)
+GisLoc = "{}\\HOFOR\\Data Broenshoej\\Raster Data".format(folderLoc)
 # Assuming the relevant column is the last column and the first column is an ID. 
 rørRain_Brøns = pd.read_excel("{}\\Rør+Rain_Brøns.xlsx".format(GisLoc)).iloc[:,[0,-3,-2,-1]]
 rørGWL_Brøns = pd.read_excel("{}\\Rør+GWLevel_Brøns.xlsx".format(GisLoc)).iloc[:,[0,-1]]
@@ -70,19 +72,19 @@ rørLandUse_Brøns.columns = ["SYSTEM_ID","LandUse"]
 havariLandUse_Brøns.columns = ["SYSTEM_ID","LandUse"]
 
 # Length data: 
-pipeLength_rør = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\PipeLengths_Rør.xlsx".format(folderLoc))
-pipeLength_havari = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\PipeLengths_Havari.xlsx".format(folderLoc))
+pipeLength_rør = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Rør.xlsx".format(folderLoc))
+pipeLength_havari = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Havari.xlsx".format(folderLoc))
 
 # Joint data: 
-nJoints_rør = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Joints_Subpipe_Rør.xlsx".format(folderLoc))
-nJoints_havari = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Joints_Subpipe_Havari.xlsx".format(folderLoc))
+nJoints_rør = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Rør.xlsx".format(folderLoc))
+nJoints_havari = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Havari.xlsx".format(folderLoc))
 
 # Operational Data: 
-rørSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Rør_SupplyDist_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1,-7,-6]]
-havariSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Havari_SupplyDist_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1,-7,-6]]
+rørSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Rør_SupplyDist_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1,-7,-6]]
+havariSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Havari_SupplyDist_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1,-7,-6]]
 rørSupplyDist_brøns.columns = ["ID","SupplyDist","X_UTM","Y_UTM"]
 havariSupplyDist_brøns.columns = ["ID","SupplyDist","X_UTM","Y_UTM"]
-operationalData = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\CSV_Temperature and Pressure data\\CSV_Temperature and Pressure data.xlsx".format(folderLoc))
+operationalData = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\CSV_Temperature and Pressure data\\CSV_Temperature and Pressure data.xlsx".format(folderLoc))
 
 # Concatenating all relevant comtaminants 
 rørSoilCG_Brøns = rørSoilCG_Zink_Brøns
@@ -100,12 +102,15 @@ def DetermineHavariAge(df0,cborn = "Dato for anlæg udført",cdie="Dato for hæn
     input:df of broken pipes, columnname of when the pipes were put in the ground and when they broke"""
     bornDate = df0[cborn].apply(ConvertStr2Date)
     deathDate = df0[cdie].apply(ConvertStr2Date)
-    agediffs = np.zeros(len(bornDate)) 
-    for i in range(len(bornDate)): 
+    agediffs = np.zeros(len(bornDate))
+    deathYears = agediffs.copy() 
+    for i in range(len(bornDate)):
+        deathYears[i] = deathDate[i].year 
         agediffs[i] = deathDate[i].year - bornDate[i].year
     age = pd.DataFrame({"Age":agediffs})
+    deathYears_df = pd.DataFrame({'Havari Year':deathYears})
     df0 = df0.drop([cborn,cdie],axis=1)
-    df0 = pd.concat([df0,age],axis=1)
+    df0 = pd.concat([df0,age,deathYears_df],axis=1)
     df0 = GroupAges(df0) 
 
      # Fjerner alle de rækker, hvor datoen ikke er indskrevet, og hvor vi derfor ikke kan bestemme alderen. (I disse data er anlægsdaten for alle sammen forstået som for flere hundrede år siden)
@@ -245,6 +250,8 @@ rørData_KBH_Jord, rørData_KBH_Hus = WorkingWithLedningsData("LedningVF_KBH")
 rørData_Brøns_Jord, rørData_Brøns_Hus = WorkingWithLedningsData("Ledninger_Brøns")
 
 
+
+
 #%% 
 # ---------  Adds the GIS data to the data set  --------- 
 GIS_Rør_Brøns = CombineDFonID(BrønsRørList)
@@ -273,7 +280,6 @@ renameDic = {'Type':"InsulationType", 'Lednings-type':"InsulationType",'Rør-dia
             "Rain_1":"Rain","GWLevel_1":"GWLevel","SoilCG_Zin":"SoilCG_Zink",'GWCG_Bly_1':'GWCG_Lead', 'GWCG_Cyani':'GWCG_Cya', 'GWCG_Deter':'GWCG_Det', 'GWCG_Pesti':'GWCG_Pest',
             'Hovedvej_D':'MainRoad_Dist', 'Train_Dist':'Train_Dist', 'jordart':'SoilType', 'fclass':'RoadType', 'maxspeed':'MaxSpeed','Anaerobic_':'Anae_Depth'
             }
-
 havariData_KBH_Sorted.rename(columns=renameDic,inplace=True)
 rørData_KBH_Jord.rename(columns=renameDic,inplace=True)
 havariData_Brøns_WGIS.rename(columns=renameDic,inplace=True)
@@ -291,28 +297,30 @@ skal erstatte de nuværende strings, og hver værdi i underdic'et er en list med
 # dataTotal = pd.concat([havariData_KBH_Sorted,rørData_KBH_Jord],axis=0,ignore_index=True) # Samler dataen i en df, for nemmere at kunne finde unikke values - Kan udkommenteres npr valueDic er lavet
 valueDic_KBH = {
     'InsulationType':{"PreInsulated" : ["Præ-isoleret - enkelt","Præ-isoleret-dobb","Præ-isoleret-enk.","Præ-isoleret - dobbelt rund"],
-                 "NotPreInsulated" : ['Ikke præ-isoleret i kanal','Ikke præ-isoleret i bøsningsrør', 'Ikke præ-isoleret i kælder','Ikke præ-isoleret i kammer','Ikke præ-isoleret'],
-                 "Unknown" : "Ukendt"},
+        "NotPreInsulated" : ['Ikke præ-isoleret i kanal','Ikke præ-isoleret i bøsningsrør', 'Ikke præ-isoleret i kælder','Ikke præ-isoleret i kammer','Ikke præ-isoleret'],
+        "Unknown" : "Ukendt"},
     'InnerDia' : {"Unknown" : 'Ukendt'},
     'InnerPipeMate':{'Other' : 'Andet', 
-                 "Unknown"  : "Ukendt"},
+        "Unknown"  : "Ukendt", 
+        'Steel' : 'Stål'},
     'Fabricator':{"Unknown" : ['Ukendt','-'], 
-                 "Other"   : ['Andet','Cusinus','CuSINUS','Dürotan',"Flexwell",'Stjerne'], # Alle firmaer derhar produceret 3 fejlrør eller mindre er sat som "Other"
-                 "Iso-Plus": 'IsoWarm', # Antager at dette er en tastefejl, da der kun er 1 IsoWarm 
-                 'ICM/Alstom/ABB' : ['ICM','ABB','ICM / Alstom / ABB']},
+        "Other"   : ['Andet','Cusinus','CuSINUS','Dürotan',"Flexwell",'Stjerne'], # Alle firmaer derhar produceret 3 fejlrør eller mindre er sat som "Other"
+        "Iso-Plus": 'IsoWarm', # Antager at dette er en tastefejl, da der kun er 1 IsoWarm 
+        'ICM/Alstom/ABB' : ['ICM','ABB','ICM / Alstom / ABB'],
+        'Loegstoer' : 'Løgstør'},
     'KanalType':{"Unknown" : ['Ukendt'],
-                 "NoChannel"     : ['-'], 
-                 "Other"   : ['Andre','Andre','Anden',"C","D","D-speciel"],
-                 "B"       : ["B-speciel"]}    
+        "NoChannel"     : ['-'], 
+        "Other"   : ['Andre','Andre','Anden',"C","D","D-speciel"],
+        "B"       : ["B-speciel"]}    
 }
 valueDic_Brøns = valueDic_KBH | {
     'LandUse':{'Park etc.':['forest','grass','park','meadow'],
-               'Commercial':['commercial','retail','industrial'],
-               'Unknown':['scrub']},
+        'Commercial':['commercial','retail','industrial'],
+        'Unknown':['scrub']},
     'RoadType':{'FootPath':['footway','steps','pedestrian','cycleway','path'],  # Pedestrian burde allokeres automatisk til større veje med det nye system, men hvis der ikke er nogen stor vej i nærhedne må det være bedst at allokere det til gå-veje. 
-                'Residential':['residential','service']
-                }, 
-    'SoilType':{'FT - Ferskvandstørv':['SØ - Ferskvand']} # Det eneste 'SØ - Ferskvand' datapunkt der er, skyldes at geometrien er placeret en smule forkert. Det ligger ikke rent faktisk under en sø. 
+        'Residential':['residential','service']}, 
+    'SoilType':{'FT - Ferskvandstørv':['SØ - Ferskvand'],  # Det eneste 'SØ - Ferskvand' datapunkt der er, skyldes at geometrien er placeret en smule forkert. Det ligger ikke rent faktisk under en sø. 
+        'ML - Moraeneler':'ML - Moræneler'}
 } 
 NaNDic = {
     'KanalType':"NoChannel"
@@ -378,7 +386,7 @@ rørData_Brøns_withJoints = rørData_Brøns_withLength.merge(nJoints_rør,how='
 """The goal here is to allocate each fault to a pipe, meaning the need for a havari-data set is obsolete. Each pipe can 
 have more than 1 fault allocated. """
 
-FaultToPipeDM_Brøns = pd.read_excel("{}\\HOFOR\\Data Brønshøj\\Fault2PipeDistanceMatrix_Brøns.xlsx".format(folderLoc)).iloc[:,[1,0]]
+FaultToPipeDM_Brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Fault2PipeDistanceMatrix_Brøns.xlsx".format(folderLoc)).iloc[:,[1,0]]
 pipeFaults_Brøns = CalcNFaultsPrPipe(FaultToPipeDM_Brøns,rørData_Brøns_withJoints,list(havariData_Brøns_withJoints.iloc[:,0]))
 pipeFaults_Brøns.columns = ["ID","nFaults"]
 
@@ -508,19 +516,19 @@ def SplitOperationalData(OpData0):
     
     return dfs
 
-averageInnerDia = CalcWeightedAverage(rørData_Brøns_withnFaults)
+# averageInnerDia = CalcWeightedAverage(rørData_Brøns_withnFaults)
 
-operationalData_handled = dfStr2dfFloat(operationalData)
-operationalData_handled = HandleOperationalData(operationalData)
+# operationalData_handled = dfStr2dfFloat(operationalData)
+# operationalData_handled = HandleOperationalData(operationalData)
 
-operationalData_Quarters = SplitOperationalData(operationalData_handled.copy())
+# operationalData_Quarters = SplitOperationalData(operationalData_handled.copy())
 
-StationIDs = [316964704,2410285,333054174] # In order from station 1-3
+# StationIDs = [316964704,2410285,333054174] # In order from station 1-3
 
-rørSupplyDist_brøns_withT = CalcTemperatureLoss(rørSupplyDist_brøns,T_supply=76.9)
-havariSupplyDist_brøns_withT = CalcTemperatureLoss(havariSupplyDist_brøns,T_supply=76.9)
-rørSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Brønshøj\\rørSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
-havariSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Brønshøj\\havariSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
+# rørSupplyDist_brøns_withT = CalcTemperatureLoss(rørSupplyDist_brøns,T_supply=76.9)
+# havariSupplyDist_brøns_withT = CalcTemperatureLoss(havariSupplyDist_brøns,T_supply=76.9)
+# rørSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Broenshoej\\rørSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
+# havariSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Broenshoej\\havariSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
 # TODO: 
 # - Afvent Hofors svar 
 
@@ -539,7 +547,7 @@ dataTotal_Brøns = pd.concat([havariData_Brøns_Withy,rørData_Brøns_Withy],axi
 
 # Gemmer datasæt: 
 dataTotal_KBH.to_excel("{}\\HOFOR\\DataTotal_KBH.xlsx".format(folderLoc),index=False)
-dataTotal_Brøns.to_excel("{}\\HOFOR\\DataTotal_Brønshøj.xlsx".format(folderLoc),index=False)
+dataTotal_Brøns.to_excel("{}\\HOFOR\\DataTotal_Broenshoej.xlsx".format(folderLoc),index=False)
 
 
 
