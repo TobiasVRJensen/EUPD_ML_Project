@@ -54,7 +54,7 @@ header = dataTotal.columns
 # Defines which parts of the model should be run and with which parameters 
 targetName = "FaultOccurance" #"FaultOccurance" or "Age" or "nFaults"
 # combinePipes = True # Whether to combine the Havari 
-splitDataByTime = False
+splitDataByTime = True 
 doFeatureEngineering = False
 showBorutaScore = False # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
 downSampler = "KMean" # 'KMean' or 'RP' 
@@ -85,7 +85,7 @@ else:
         modelType = "Classification" 
         modelTypeName = "Class"
         bestModelName = 'RFC' 
-        X = X.drop("Age",axis=1)
+        # X = X.drop("Age",axis=1)
     elif targetName == 'Age':
         modelType = 'Regression'
         modelTypeName = "Reg"
@@ -101,8 +101,8 @@ print("Possible target values:",y[y.columns[0]].unique())
 # PlotAgeGroups(X,y)
 
 # Defines general model hyper parameters
-testSize = 0.3
-trainSize = 1-testSize
+desiredTestSize = 0.3
+trainSize = 1-desiredTestSize
 randState = 1
 featureNotInModel = None # If any features should be removes from the model (If not, 'None' should be used)
 minorityValue,majorityValue = DetermineMinorityAndMajority(y)
@@ -141,7 +141,12 @@ if targetName == "nFaults":
     X = X.loc[roerIndexes]    
     X = X.drop(["FaultOccurance"], axis=1) # Now Fault Occurance have been used for the last time and it can be removes if necessary for the model.
 
-X_Manipulated = RemoveFeature(X,featurename = featureNotInModel) # Removes the un-desired feature (if any):
+X_manipulated = RemoveFeature(X,featurename = featureNotInModel) # Removes the un-desired feature (if any):
+
+X_havari = X_manipulated[pd.concat([X_manipulated,y],axis=1)["FaultOccurance"] == 1]
+y_havari = y[pd.concat([X_manipulated,y],axis=1)["FaultOccurance"] == 1]
+X_unB = X_manipulated[pd.concat([X_manipulated,y],axis=1)["FaultOccurance"] == 0]
+y_unB = y[pd.concat([X_manipulated,y],axis=1)["FaultOccurance"] == 0]
 
 
 #%% 
@@ -150,56 +155,52 @@ X_Manipulated = RemoveFeature(X,featurename = featureNotInModel) # Removes the u
 startTime = time.perf_counter()
 
 
-if modelType == "Classification" or targetName == 'nFaults': 
-    X_train, X_test, y_train, y_test = train_test_split(X_Manipulated,y,test_size=testSize,random_state=randState,stratify=y[targetName])
-elif modelType == "Regression": 
-    X_train, X_test, y_train, y_test = train_test_split(X_Manipulated,y,test_size=testSize,random_state=randState)
-X_train,y_train = X_train.reset_index(drop=True),y_train.reset_index(drop=True) # Resets the index after the Scaler shuffled them
-X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Resets the index after the Scaler shuffled them
+if splitDataByTime: 
+    """For now this is only compatible with the classification model. """
+    ### Data splitting 
+    # Splits the havari data by year:
+    X_train_havari, y_train_havari, X_test_havari, y_test_havari, testSize = SplitHavariDataByYear(X_havari,y_havari,desiredTestSize)
+    trainSize = 1-testSize
+    # Splits the unBroken data by quantity: 
+    X_train_unB, X_test_unB, y_train_unB, y_test_unB = train_test_split(X_unB,y_unB,test_size=testSize,random_state=randState,stratify=X_unB['Age'])
+    # Recombines the havari and unB data: 
+    X_train,y_train = pd.concat([X_train_havari,X_train_unB],axis=0,ignore_index=True) , pd.concat([y_train_havari,y_train_unB],axis=0,ignore_index=True)
+    X_test,y_test = pd.concat([X_test_havari,X_test_unB],axis=0,ignore_index=True) , pd.concat([y_test_havari,y_test_unB],axis=0,ignore_index=True)
+    # Removes the 'Age' columns from the data sets as they are not relevant any more: 
+    X_train, X_test = X_train.drop(['Age'],axis=1) , X_test.drop(['Age'],axis=1)
 
-def PlotHavariYearDistribution(havariYears_df,splitYear = 2017): 
-    plt.figure(figsize=(8, 6))
-    havariYearsCounts = CountCopies(havariYears_df.copy())
-    plt.bar(havariYearsCounts["Havari Year"],havariYearsCounts["Count"]) 
-    plt.xticks([1995,2000,2005,2010,2015,2020,2025],fontsize=16)
-    print(np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] <= splitYear]),np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] <= splitYear])/np.sum(havariYearsCounts["Count"]) )
-    print(np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] >  splitYear]),np.sum(havariYearsCounts["Count"][havariYearsCounts["Havari Year"] >  splitYear])/np.sum(havariYearsCounts["Count"]))
-    plt.show()
+    ### Fault Clustering based on the Training data set only: 
+    X_train, corePoints,distances_train =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=30,min_samples=3)
+    X_test, corePoints,distances_test =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=30,min_samples=3)
+else: 
+    ### Fault Clustering based on all data points: 
+    X_manipulated, corePoints, distances = CheckIfPointInClusterZone(X_manipulated,X_havari,eps=30,min_samples=3)
+    # X = X.drop("InFaultZone",axis=1) # Hvorfor i al verden skulle jeg have lyst til at fjerne InFaultZone? 
+    X_havari_withCZ = X_manipulated[pd.concat([X_manipulated,y],axis=1)["FaultOccurance"] == 1]
+    X_havari_withCZ.to_excel("{}\\Broenshoej\\X{}_havari_unscaled.xlsx".format(resultsLoc,modelTypeName),index=False)
+    
+    ### Data splitting: 
+    # Resets the testSize as this will not change if the data is not split by time: 
+    testSize = desiredTestSize
+    # Splits the data into teseting and training by quantity: 
+    if modelType == "Classification" or targetName == 'nFaults': 
+        if targetName == "FaultOccurance":
+            X_manipulated = X_manipulated.drop("Age",axis=1)
+        X_train, X_test, y_train, y_test = train_test_split(X_manipulated,y,test_size=testSize,random_state=randState,stratify=y[targetName])
+    elif modelType == "Regression": 
+        X_train, X_test, y_train, y_test = train_test_split(X_manipulated,y,test_size=testSize,random_state=randState)
+        
 
-def SplitDataByYear(X0,y0,test_size=testSize,random_state=randState): 
-    """ Splits the X- and y-dataset into test and train depending on the year """
-    Xy = pd.concat([X0,y0],axis=1)
-    if test_size == 0.5: 
-        splitYear = 2016
-    elif test_size == 0.3: 
-        splitYear = 2017 
-    Xy_train, Xy_test = Xy[Xy["Havari Year"] <= splitYear] , Xy[Xy["Havari Year"] > splitYear]
-    X_train, y_train = Xy_train.iloc[:,:-1] , Xy_train.iloc[:,-1]
-    X_test, y_test = Xy_test.iloc[:,:-1] , Xy_test.iloc[:,-1]
-
+X_train,y_train = X_train.reset_index(drop=True),y_train.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
+X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
 
 
 PlotHavariYearDistribution(pd.DataFrame(X_train['Havari Year'].copy()))
 
 
-# Implements fault clustering: 
-""" Faults Clustering should probably be done after splitting the data to train and test, as this otherwise can result in 
-the model getting a sneak peak into which data points are broken and which are not, but this adds a looooot of processing 
-time - especially to the k-CV algortihm, as new cluster zones have to be created each time a new training data set is created."""
-X_havari = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-y_havari = y[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-if not splitDataByTime:
-    X, corePoints, distances = CheckIfPointInClusterZone(X,X_havari,eps=30,min_samples=3)
-    # X = X.drop("InFaultZone",axis=1) # Hvorfor i al verden skulle jeg have lyst til at fjerne InFaultZone? 
-    X_havari_withCZ = X[pd.concat([X,y],axis=1)["FaultOccurance"] == 1]
-    X_havari_withCZ.to_excel("{}\\Broenshoej\\X{}_havari_unscaled.xlsx".format(resultsLoc,modelTypeName),index=False)
-# TODO: Hvis splitDataByTime, saa har X stadig koordinater og har ikke noget FaultClluster Zones 
-
 # TODO: 
-# UNdersoeg hvor lang tid det faktisk tager at koere modellen, for eftersom jeg har opdateret den, kan jeg saa smide den i k-CV?? 
-# # opdater Fault Clustering for nuvaerende model, saa det bliver samlet hernede
-# Implementer Fault for den kommende tidsopdelte model.  
-
+# UNdersoeg hvor lang tid det faktisk tager at koere modellen, for eftersom jeg har opdateret den, kan jeg saa smide den i k-CV??  """ Faults Clustering should probably be done after splitting the data to train and test, as this otherwise can result in... time - especially to the k-CV algortihm, as new cluster zones have to be created each time a new training data set is created."""
+    # opdater Fault Clustering for nuvaerende model, saa det bliver samlet hernede
 
 # Her er indexerne blevet shufflet en sidste gang, saa nu kan jeg seperere ID'erne fra dem saa jeg altid har hvilket ID der hoerer til hvilket roer/havari-roer ud fra indekset: 
 ID_train, ID_test = X_train.iloc[:,0].copy(),X_test.iloc[:,0].copy()
@@ -211,11 +212,11 @@ data_test = pd.concat([X_test,y_test],axis=1)
 # Skalerer alle tal i X med en standard scaler eller minMax scaler hvis de er blevet OneHOt Encoded (Except Columns describing IDs or x- or y-coordinates)
 X_train1,X_test1 = ScaleX(X_train.drop(OneHotXColumns,axis=1)), ScaleX(X_test.drop(OneHotXColumns,axis=1))
 X_train2,X_test2 = ScaleX(X_train[OneHotXColumns], scalingtype="Normalized"), ScaleX(X_test[OneHotXColumns], scalingtype="Normalized") # Rescales values that should be between 0-1
-X_train,X_test = pd.concat([X_train1,X_train2],axis=1), pd.concat([X_test1,X_test2],axis=1)
+X_train_scaled,X_test_scaled = pd.concat([X_train1,X_train2],axis=1), pd.concat([X_test1,X_test2],axis=1)
 
-X_train_havari_scaled = X_train[y_train[targetName] == 1]
+X_train_havari_scaled = X_train_scaled[y_train[targetName] == 1]
 nBrokenPipes = X_train_havari_scaled.shape[0]
-nUnbrokenPipes = X_train.shape[0] - nBrokenPipes
+nUnbrokenPipes = X_train_scaled.shape[0] - nBrokenPipes
 
 
 #%% 
@@ -283,7 +284,7 @@ if doFeatureEngineering:
         dfBorutaScores = add_mean_row(dfBorutaScores)
         dfBorutaScores.to_excel("{}\\Broenshoej\\FeatureImportance\\Boruta\\BorutaScores.xlsx".format(resultsLoc),index=False)
 
-# Removing irelevant features:
+# We only want to use the relevant features in the model:
 X_train_RelFeat,X_test_relFeat = X_train[featuresToKeep],X_test[featuresToKeep]
 
 
@@ -399,10 +400,14 @@ if modelType == "Classification":
     # Plots the y_pred_perc Distribution: 
     y_havari_pred_perc = y_pred_perc[y_test_final[targetName] == 1]
     Ploty_percDistribution(y_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0)
-    # Ploty_percDistribution(y_havari_pred_perc,title='Distribution of Likelyhood of breaks for Havari')
+
+    # Plotter længde-distributionen af havari-rør: 
+    # PlotDistributionOfDfColumn(X_havari,'Length',plotType='Bar',title="Length Distribution in Faults", barIntervals=np.linspace(0,0.7,11))
+    # PlotDistributionOfDfColumn(X,'Length',plotType='Bar',title="Length Distribution in all pipes", barIntervals=np.linspace(0,0.7,11))
     
     # Plotter resultaterne som funktion af 2 af featuerne
     # ScatterTestWithDB(X_train_ROS,  y_train_ROS, X_test_final, y_test_final, modelWith2Feat,feat1Name,feat2Name,Title="Targets")
+
 elif targetName == 'nFaults': 
     y_pred, Model, R2_test, R2_train = TestRegressionModel(bestModel,X_train_final,y_train_final,X_test_final,y_test_final)
     print("R2 (test): {} " \
@@ -414,8 +419,6 @@ elif targetName == 'nFaults':
     # y_test_final_withID = pd.concat([ID_test,y_test_final],axis=1)
     # y_pred_perc_df = pd.DataFrame({"Pred%":y_pred_perc})
     # PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
-
-
 
 elif targetName == "Age":
     # Beregner Predictede Ages: 
@@ -486,6 +489,8 @@ print("Total Runtime:{} min".format(runTime))
 
 
 # %%
+
+
 
 
 

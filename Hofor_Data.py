@@ -366,7 +366,7 @@ havariData_Brøns_WGIS, rørData_Brøns_WGIS = ChangeUnknowns(havariData_Brøns_
 
 #%% 
 # ---------  Adds length and joints to the data set   ---------
-# The code for calculating the lengths and joints are found in the GISdata.py file. 
+# Code for calculating the lengths and joints are found in the GISdata.py file. 
 
 # Adds length as a feature to the data set: 
 havariData_KBH_withLength = havariData_KBH_Sorted.copy()
