@@ -3,7 +3,7 @@
 #%%
 import pandas as pd
 import numpy as np
-
+#%%
 folderLoc = "C:\\Users\\tvrj\\OneDrive - Danmarks Tekniske Universitet\\Dokumenter\\Arbejde\\Data"
 MappedDataLoc = "{}\\Kortdata".format(folderLoc)
 data_WaterLevel = pd.read_csv("{}\\Samples and Measurements, Water levels\\WaterLevels.csv".format(MappedDataLoc))
@@ -14,6 +14,10 @@ data_SoilCG_Metals = pd.read_excel("{}\\Samples and Measurements, Soailair sampl
 # data_SoilCG_OrganicPol = pd.read_excel("{}\\Samples and Measurements, Soailair samples from boreholes\\SoilSamples_OrganicMicroPolution.xlsx".format(MappedDataLoc))
 data_GWCG = pd.read_excel("{}\\GWCompoundGroups v2.0\\GWCG.xlsx".format(MappedDataLoc))
 # data_WaterCompound = pd.read_csv("{}\\Groundwater, Compounds\\GW_Compounds.xlsx".format(MappedDataLoc))
+
+#%%
+samlingerTilRør = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\EUDP - Samling-HOFOR (Brønshøj).xlsx".format(folderLoc))
+
 
 #%% 
 def FilterGWLbyMonths(df0,cdate:str,cGWL:str,keeplist:list,input:str="csv"): 

@@ -27,8 +27,8 @@ distanceMatrix_Broens.to_csv("{}\\DistanceMatrix_Broens.csv".format(GisLoc))
 # ----------  Adds length to data set  -------------
 # (And saves necessary values for Fault Capture vs Length Capture ROC)
 # Length data:
-FaultToPipeDM = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Fault2PipeDistanceMatrix_Broens.xlsx".format(folderLoc)).iloc[:,[1,0]]
-pipeLength_roer_data = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Ledninger_Broenshoej_MedRoerlaengde.xlsx".format(folderLoc)).iloc[:,[0,-1]]
+FaultToPipeDM = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Fault2PipeDistanceMatrix_Brøns.xlsx".format(folderLoc)).iloc[:,[1,0]]
+pipeLength_roer_data = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Ledninger_Brønshøj_MedRørlængde.xlsx".format(folderLoc)).iloc[:,[0,-1]]
 FaultToPipeDM.columns = ["ID_Roer","ID_Havari"]
 pipeLength_roer_data.columns = ["ID_Roer","Length"]
  
@@ -40,7 +40,7 @@ pipeLength_roer.columns = ["ID","Length"]
 pipeLength_havari.columns = ["ID","Length"] 
 pipeLength_total = pd.concat([pipeLength_roer,pipeLength_havari],axis=0)
 
-pipeLength_roer.to_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Roer.xlsx".format(folderLoc),index=False)
+pipeLength_roer.to_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Rør.xlsx".format(folderLoc),index=False)
 pipeLength_havari.to_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Havari.xlsx".format(folderLoc),index=False)
 pipeLength_total.to_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths.xlsx".format(folderLoc),index=False)
 

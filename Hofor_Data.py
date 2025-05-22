@@ -78,6 +78,7 @@ pipeLength_havari = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\PipeLengths_Havar
 # Joint data: 
 nJoints_rør = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Rør.xlsx".format(folderLoc))
 nJoints_havari = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Havari.xlsx".format(folderLoc))
+nJoints_rør_hofor = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Samlinger_Rør_Brøns(Samling-rør-forbindelse).xlsx".format(folderLoc))
 
 # Operational Data: 
 rørSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Rør_SupplyDist_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1,-7,-6]]
@@ -85,6 +86,11 @@ havariSupplyDist_brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Havari_Supp
 rørSupplyDist_brøns.columns = ["ID","SupplyDist","X_UTM","Y_UTM"]
 havariSupplyDist_brøns.columns = ["ID","SupplyDist","X_UTM","Y_UTM"]
 operationalData = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\CSV_Temperature and Pressure data\\CSV_Temperature and Pressure data.xlsx".format(folderLoc))
+havariTopography_Brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Havari+Topo_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-7]]
+rørTopography_Brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Rør+Topo_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-7]]
+
+#%%
+endPipesData = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Connections.xlsx".format(folderLoc))
 
 # Concatenating all relevant comtaminants 
 rørSoilCG_Brøns = rørSoilCG_Zink_Brøns
@@ -380,6 +386,19 @@ rørData_KBH_withJoints = rørData_KBH_withLength.copy()
 havariData_Brøns_withJoints = havariData_Brøns_withLength.merge(nJoints_havari,how='left',left_on="ID",right_on="ID")
 rørData_Brøns_withJoints = rørData_Brøns_withLength.merge(nJoints_rør,how='left',left_on="ID",right_on="ID")
 
+# Analyse af Hofors samlingsdata: 
+samlingerTilRør = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Samlinger_Rør_Brøns(Samling-rør-forbindelse).xlsx".format(folderLoc))
+samlingerTilRør = samlingerTilRør.drop_duplicates(subset='System ID', keep='first')
+samlingsCount = CountCopies(pd.DataFrame(samlingerTilRør["SYSTEM_ID"]))
+compareSamlingsCount0 = pd.merge(rørData_Brøns_withJoints[["ID",'nJoints']],samlingsCount,how='inner',left_on='ID',right_on='SYSTEM_ID')
+compareSamlingsCount0.drop_duplicates(subset='ID', keep='first')
+compareSamlingsCount=compareSamlingsCount0.iloc[:,[1,-1]]
+diff = compareSamlingsCount.iloc[:,0] - compareSamlingsCount.iloc[:,1]
+# print(np.std(diff))
+# print(np.mean(diff))
+# print(np.mean(compareSamlingsCount.iloc[:,0]),np.mean(compareSamlingsCount.iloc[:,1]))
+# print(np.sum(compareSamlingsCount.iloc[:,0]),np.sum(compareSamlingsCount.iloc[:,1]))
+
 
 # %%
 # ---------  Allocates faults to pipes  ---------
@@ -515,7 +534,56 @@ def SplitOperationalData(OpData0):
         dfs[f'Q{quarter}'] = quarter_df
     
     return dfs
+#%%
+def DetermineTopography(topographyData,cMAX='MAXKOTE', supplyHeight:float=17.5): 
+    """Takes a df with the column 'MAXKOTE' and returns a new df which describes the height difference
+    between the supply point and the pipe. 
+    Negative height diffs means the pipe is located lower than the supply point. """
+    heightDiffs = topographyData[cMAX] - supplyHeight
+    dfout = pd.concat([topographyData.iloc[:,0],heightDiffs],axis=1)
+    dfout.columns = ['ID','Height_Diff']
+    return dfout
 
+
+
+rørHeightsDiffs = DetermineTopography(rørTopography_Brøns)
+
+
+def LinearPressureApprox(supplyDist_rør,supplyDist_havari,endPipeData,dP=2.0,supplyPressure=4.5):
+    """Makes a linear approximation of the pressure drop in the pipes (which is what is expected). 
+    The Linear approximation is performed based on the average supply distance to the consumers, as 
+    well as the total pressure drop over the network and the absolute supply pressure.  
+
+    Input:
+    supplyDistData: df with the columns: "ID" of the pipe, "SupplyDist" describin the the distance 
+    from all pipes to the supply point through the network, 'X_UTM', 'Y_UTM' 
+    endPipeData: df of all the pipes, describin the number of joints that pipe has due to 
+    connections to other pipes. If nJoints=1, then it must be a pipe located at a consumer. Must
+    have the columns: 'ID' and 'nJoints' 
+    dP: Total supplied pressure to the network from the supply station. 
+    supplyPressure: Absolute pressure measured at the supply station. 
+
+    Return: The absolute pressure approximations for rør and havari. 
+    """
+    endPipeIDs = endPipeData[endPipeData['nJoints'] == 1]['ID']
+    endPipes = pd.merge(endPipeIDs,supplyDist_rør,on='ID',how='inner')
+    endPipes.to_excel("{}\\HOFOR\\Data Broenshoej\\EndPipes.xlsx".format(folderLoc),index=False)
+    averageSupply2ConsumerDist = np.mean(endPipes["SupplyDist"])
+    dPpermeter = dP/averageSupply2ConsumerDist
+    rørAbsolutePressure_brøns, havariAbsolutePressure_brøns = supplyDist_rør.copy() , supplyDist_havari.copy()
+    rørAbsolutePressure_brøns["Pressure"] = supplyPressure - rørAbsolutePressure_brøns["SupplyDist"] * dPpermeter
+    havariAbsolutePressure_brøns["Pressure"] = supplyPressure - havariAbsolutePressure_brøns["SupplyDist"] * dPpermeter
+    return rørAbsolutePressure_brøns, havariAbsolutePressure_brøns
+
+### Tilføjer Pressure til data sættet ud fra 
+
+rørAbsolutePressure_brøns, havariAbsolutePressure_brøns = LinearPressureApprox(rørSupplyDist_brøns,havariSupplyDist_brøns,endPipesData, dP=2,supplyPressure=4.5)
+rørAbsolutePressure_brøns.to_excel("{}\\HOFOR\\Data Broenshoej\\Rør_AbsolutePressures_brøns_Split.xlsx".format(folderLoc),index=False)
+rørData_Brøns_withP = pd.merge(rørData_Brøns_withnFaults,rørAbsolutePressure_brøns,how='left',on='ID')
+havariData_Brøns_withP = pd.merge(havariData_Brøns_withnFaults,havariAbsolutePressure_brøns,how='left',on='ID')
+
+
+#%%
 # averageInnerDia = CalcWeightedAverage(rørData_Brøns_withnFaults)
 
 # operationalData_handled = dfStr2dfFloat(operationalData)
@@ -535,11 +603,17 @@ def SplitOperationalData(OpData0):
 
 #%% 
 # ---------  Combines the data set  ---------
+# Latest used data: 
+rør_KBH_SemiFinal = rørData_KBH_withnFaults
+havari_KBH_SemiFinal = havariData_KBH_withnFaults
+rør_Brøns_SemiFinal = rørData_Brøns_withP
+havari_Brøns_SemiFinal = havariData_Brøns_withP
+
 # Add a "Did it Break" column, which will function as the target column
-havariData_KBH_Withy = pd.concat([havariData_KBH_withnFaults,pd.DataFrame({"FaultOccurance" : np.ones(havariData_KBH_withnFaults.shape[0])})],axis=1)
+havariData_KBH_Withy = pd.concat([havari_KBH_SemiFinal,pd.DataFrame({"FaultOccurance" : np.ones(havari_KBH_SemiFinal.shape[0])})],axis=1)
 rørData_KBH_Withy = pd.concat([rørData_KBH_withnFaults,pd.DataFrame({"FaultOccurance" : np.zeros(rørData_KBH_withnFaults.shape[0])})],axis=1)
-havariData_Brøns_Withy = pd.concat([havariData_Brøns_withnFaults,pd.DataFrame({"FaultOccurance" : np.ones(havariData_Brøns_withnFaults.shape[0])})],axis=1)
-rørData_Brøns_Withy = pd.concat([rørData_Brøns_withnFaults,pd.DataFrame({"FaultOccurance" : np.zeros(rørData_Brøns_withnFaults.shape[0])})],axis=1)
+havariData_Brøns_Withy = pd.concat([havari_Brøns_SemiFinal,pd.DataFrame({"FaultOccurance" : np.ones(havari_Brøns_SemiFinal.shape[0])})],axis=1)
+rørData_Brøns_Withy = pd.concat([rør_Brøns_SemiFinal,pd.DataFrame({"FaultOccurance" : np.zeros(rør_Brøns_SemiFinal.shape[0])})],axis=1)
 
 # Samler de forskellige datasæt: 
 dataTotal_KBH = pd.concat([havariData_KBH_Withy,rørData_KBH_Withy],axis=0,ignore_index=True)
