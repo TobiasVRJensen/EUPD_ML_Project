@@ -54,16 +54,16 @@ header = dataTotal.columns
 # Defines which parts of the model should be run and with which parameters 
 targetName = "FaultOccurance" #"FaultOccurance" or "Age". "nFaults" Is no  longer supported (Multiple functions need to be updated for this to work)
 # combinePipes = True # Whether to combine the Havari 
-splitDataByTime = False 
+splitDataByTime = False
 doFeatureEngineering = False
-showBorutaScore = False # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
+showBorutaScore = True # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
 downSampler = "KMean" # 'KMean' or 'RP' 
 DSLevel = 10000
 overSampler = "ROS" # 'ROS' or 'ExpVSG' or 'GAN' 
 runGAN = False
 desiredImbRatio = 1/10 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
-optimizeHyperParameters = True
-fastHPTuning = True
+optimizeHyperParameters = False
+fastHPTuning = False
 updateHpOfBestModel = 'AUC' # False # Defines which evaluator to optimize the HPs for. 
 featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','FaultClustering','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Steel','Pressure']#, 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstoerv','SoilType_ML - Moraeneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
 HPTuningName = 'withPressure' 
@@ -171,9 +171,6 @@ if splitDataByTime:
     # Removes the 'Age' columns from the data sets as they are not relevant any more: 
     X_train, X_test = X_train.drop(['Age'],axis=1) , X_test.drop(['Age'],axis=1)
 
-    ### Fault Clustering based on the Training data set only: 
-    X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
-    X_test, corePoints =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
 else: 
     dataSplitName = 'Quantity'
     ### Fault Clustering based on all data points: 
@@ -190,9 +187,6 @@ else:
     elif modelType == "Regression": 
         X_train, X_test, y_train, y_test = train_test_split(X_manipulated,y,test_size=testSize,random_state=randState)
     X_train_havari = X_train[pd.concat([X_train,y_train],axis=1)["FaultOccurance"] == 1]
-    ### Fault Clustering based on the Training data set only: 
-    X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
-    X_test, corePoints  =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
 
 X_train,y_train = X_train.reset_index(drop=True),y_train.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
 X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
@@ -200,9 +194,14 @@ X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Re
 
 # PlotHavariYearDistribution(pd.DataFrame(X_train['Havari Year'].copy()))
 
+### Fault Clustering based on the Training data set only: 
+X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
+X_test, corePoints  =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
+### Fault Clustering based on the Training data set only: 
+X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
+X_test, corePoints =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
 
 # TODO: 
-# UNdersoeg hvor lang tid det faktisk tager at koere modellen, for eftersom jeg har opdateret den, kan jeg saa smide den i k-CV??  """ Faults Clustering should probably be done after splitting the data to train and test, as this otherwise can result in... time - especially to the k-CV algortihm, as new cluster zones have to be created each time a new training data set is created."""
     # opdater Fault Clustering for nuvaerende model, saa det bliver samlet hernede
 
 # Her er indexerne blevet shufflet en sidste gang, saa nu kan jeg seperere ID'erne og koordinaterne fra dem saa jeg altid har hvilket ID der hoerer til hvilket roer/havari-roer ud fra indekset: 
@@ -408,21 +407,22 @@ if modelType == "Classification":
     ConfusionMatrix(y_test_final,y_pred, savename = saveName,title="Recall",Normalise=None)
     
     # ROC curves: 
-    # PlotROC(y_test_final, y_pred_perc,savename=saveName,bestmodelname=bestModelName)
-    # PlotPRCurve(y_test_final, y_pred_perc,savename=saveName,bestmodelname=bestModelName)
+    PlotROC(y_test_final, y_pred_perc,savename=saveName,bestmodelname=bestModelName)
+    PlotPRCurve(y_test_final, y_pred_perc,savename=saveName,bestmodelname=bestModelName)
     y_test_final_withID = pd.concat([ID_test,y_test_final],axis=1)
     y_pred_perc_df = pd.DataFrame({"Pred%":y_pred_perc})
     PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
 
     # aendrer cut-off threshold (phi), og plotter CM igen. 
-    # phi = 0.80 # Cut-off threshold 
-    # y_pred_phi = y_pred
-    # y_pred_phi[y_pred_perc < phi] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
-    # ConfusionMatrix(y_test_final,y_pred_phi, savename = saveName,title="Recall",Normalise=None)
+    phi, CMvalues_df = DeterminePhiAt50Precision(y_pred_perc_df, y_test_final, plot = False)
+    y_pred_phi = np.ones(len(y_pred))
+    y_pred_phi[y_pred_perc < phi] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
+    ConfusionMatrix(y_test_final,y_pred_phi, savename = saveName + ",phi=".format(phi),title="Recall",Normalise=None)
     
     # Plots the y_pred_perc Distribution: 
     y_havari_pred_perc = y_pred_perc[y_test_final[targetName] == 1]
-    Ploty_percDistribution(y_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0)
+    y_roer_pred_perc   = y_pred_perc[y_test_final[targetName] == 0]
+    Ploty_percDistribution(y_roer_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0)
 
     # Plotter laengde-distributionen af havari-roer: 
     # PlotDistributionOfDfColumn(X_havari,'Length',plotType='Bar',title="Length Distribution in Faults", barIntervals=np.linspace(0,0.7,11))
