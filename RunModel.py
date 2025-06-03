@@ -54,7 +54,7 @@ header = dataTotal.columns
 # Defines which parts of the model should be run and with which parameters 
 targetName = "FaultOccurance" #"FaultOccurance" or "Age". "nFaults" Is no  longer supported (Multiple functions need to be updated for this to work)
 # combinePipes = True # Whether to combine the Havari 
-splitDataByTime = False
+splitDataByTime = True
 doFeatureEngineering = False
 showBorutaScore = True # Indicates whether the Boruta Score of the model should be saved in a file. This is to only overwrite the file when wanted
 downSampler = "KMean" # 'KMean' or 'RP' 
@@ -62,8 +62,8 @@ DSLevel = 10000
 overSampler = "ROS" # 'ROS' or 'ExpVSG' or 'GAN' 
 runGAN = False
 desiredImbRatio = 1/10 # Describes the ratio between unbroken and broken pipes after DS and OS. Used to define OSLevel
-optimizeHyperParameters = False
-fastHPTuning = False
+optimizeHyperParameters = True
+fastHPTuning = True
 updateHpOfBestModel = 'AUC' # False # Defines which evaluator to optimize the HPs for. 
 featuresToKeep = ['InnerDia', 'AgeGroup', 'Rain', "Length",'Anae_Depth','FaultClustering','SoilCG_Zink','GWCG_Cya', 'GWCG_Lead','GWCG_Det','GWCG_Pest', 'InnerPipeMate_Steel','Pressure']#, 'nJoints']#,'SoilType_DS - Smeltevandssand','SoilType_FT - Ferskvandstoerv','SoilType_ML - Moraeneler', 'LandUse_Park etc.', 'LandUse_allotments','LandUse_residential','RoadType']
 HPTuningName = 'withPressure' 
@@ -104,6 +104,8 @@ print("Possible target values:",y[y.columns[0]].unique())
 
 # Defines general model hyper parameters
 desiredTestSize = 0.3
+if splitDataByTime: 
+    desiredTestSize = 0.5 
 trainSize = 1-desiredTestSize
 randState = 1
 featureNotInModel = None # If any features should be removes from the model (If not, 'None' should be used)
@@ -170,6 +172,8 @@ if splitDataByTime:
     X_test,y_test = pd.concat([X_test_havari,X_test_unB],axis=0,ignore_index=True) , pd.concat([y_test_havari,y_test_unB],axis=0,ignore_index=True)
     # Removes the 'Age' columns from the data sets as they are not relevant any more: 
     X_train, X_test = X_train.drop(['Age'],axis=1) , X_test.drop(['Age'],axis=1)
+    # Splits the test data set into vallidation and test data set: 
+    X_val, X_test, y_val, y_test = train_test_split(X_test,y_test,test_size=0.5,random_state=randState,stratify=y_test[targetName])
 
 else: 
     dataSplitName = 'Quantity'
@@ -190,24 +194,25 @@ else:
 
 X_train,y_train = X_train.reset_index(drop=True),y_train.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
 X_test,y_test = X_test.reset_index(drop=True),y_test.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
-
+if splitDataByTime: 
+    X_val,y_val = X_val.reset_index(drop=True),y_val.reset_index(drop=True) # Resets the index after the train-Test-split shuffled them
 
 # PlotHavariYearDistribution(pd.DataFrame(X_train['Havari Year'].copy()))
 
 ### Fault Clustering based on the Training data set only: 
 X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
 X_test, corePoints  =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
-### Fault Clustering based on the Training data set only: 
-X_train, corePoints =  CheckIfPointInClusterZone(X_train.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
-X_test, corePoints =  CheckIfPointInClusterZone(X_test.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
-
-# TODO: 
-    # opdater Fault Clustering for nuvaerende model, saa det bliver samlet hernede
+if splitDataByTime: 
+    X_val, corePoints  =  CheckIfPointInClusterZone(X_val.copy(), X_train_havari, eps=eps_CZ,min_samples=min_samples_CZ)
 
 # Her er indexerne blevet shufflet en sidste gang, saa nu kan jeg seperere ID'erne og koordinaterne fra dem saa jeg altid har hvilket ID der hoerer til hvilket roer/havari-roer ud fra indekset: 
 ID_train, ID_test = X_train['ID'].copy(),X_test['ID'].copy()
 X_UTM_train, X_UTM_test = X_train[['X_UTM','Y_UTM']].copy(),X_test[['X_UTM','Y_UTM']].copy()
 X_train, X_test = X_train.drop(["ID","X_UTM","Y_UTM","Havari Year"],axis=1) , X_test.drop(["ID","X_UTM","Y_UTM","Havari Year"],axis=1) # Removes some columns, as their purpose over. 
+if splitDataByTime: 
+    ID_val  = X_val['ID'].copy()
+    X_UTM_val = X_val[['X_UTM','Y_UTM']].copy()
+    X_val = X_val.drop(["ID","X_UTM","Y_UTM","Havari Year"],axis=1)
 
 # Samler testdataen, da det er relevant til regressionsmodellen. 
 data_test = pd.concat([X_test,y_test],axis=1)
@@ -220,6 +225,10 @@ X_train_scaled,X_test_scaled = pd.concat([X_train1,X_train2],axis=1), pd.concat(
 X_train_havari_scaled = X_train_scaled[y_train[targetName] == 1]
 nBrokenPipes = X_train_havari_scaled.shape[0]
 nUnbrokenPipes = X_train_scaled.shape[0] - nBrokenPipes
+if splitDataByTime: 
+    X_val1 = ScaleX(X_val.drop(OneHotXColumns,axis=1))
+    X_val2 = ScaleX(X_val[OneHotXColumns], scalingtype="Normalized") # Rescales values that should be between 0-1
+    X_val_scaled= pd.concat([X_val1,X_val2],axis=1)
 
 
 #%% 
@@ -272,13 +281,13 @@ print("Model used: {}".format(bestModelName))
 if doFeatureEngineering: 
     ite = '2.0' 
     if modelType == "Classification":
-        featuresToKeep_kBest = FeatureEngineering_kBest(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
+        featuresToKeep_kBest = FeatureEngineering_kBest(X_train_scaled,y_train,RFC,estimatorName="RFC{}".format(ite))
         print("kBest:",featuresToKeep_kBest)
-        featuresToKeep_RFE = FeatureEngineering_RFE(X_train,y_train,RFC,estimatorName="RFC{}".format(ite))
+        featuresToKeep_RFE = FeatureEngineering_RFE(X_train_scaled,y_train,RFC,estimatorName="RFC{}".format(ite))
         print("RFE:",featuresToKeep_RFE)
     bestModel_coldStart = clone(bestModel)
     setattr(bestModel_coldStart,'warm_start',False) # Brouta does not work when 'warm_start' is True, thus it is changed to False
-    featuresToKeep_boruta,featureRankings, evaluationScore_Boruta, borutaScore = FeatureEngineering_Boruta(X_train,y_train,bestModel_coldStart,estimatorName="RFC_Cold{}".format(ite))
+    featuresToKeep_boruta,featureRankings, evaluationScore_Boruta, borutaScore = FeatureEngineering_Boruta(X_train_scaled,y_train,bestModel_coldStart,estimatorName="RFC_Cold{}".format(ite))
     print("Boruta:",featuresToKeep_boruta,evaluationScore_Boruta)
     if showBorutaScore: 
         dfBorutaScores = pd.DataFrame(borutaScore)
@@ -287,15 +296,16 @@ if doFeatureEngineering:
         dfBorutaScores.to_excel("{}\\Broenshoej\\FeatureImportance\\Boruta\\BorutaScores.xlsx".format(resultsLoc),index=False)
 
 # We only want to use the relevant features in the model:
-X_train_RelFeat,X_test_relFeat = X_train[featuresToKeep],X_test[featuresToKeep]
-
+X_train_relFeat,X_test_relFeat = X_train_scaled[featuresToKeep],X_test_scaled[featuresToKeep]
+if splitDataByTime: 
+    X_val_relFeat = X_val_scaled[featuresToKeep]
 
 #%% 
 # ---------  Downsampling  ---------
 if downSampler == 'RP':
-    X_train_DS, y_train_DS = CalcEucledianDistances(X_train_RelFeat,y_train,Plot=False,DSLevel=DSLevel) # Undersamples X_train and y_train depending on the Euclidean distance to some reference points 
+    X_train_DS, y_train_DS = CalcEucledianDistances(X_train_relFeat,y_train,Plot=False,DSLevel=DSLevel) # Undersamples X_train and y_train depending on the Euclidean distance to some reference points 
 elif downSampler == 'KMean':
-    X_train_DS, y_train_DS = kMeansClusteringDS(X_train_RelFeat,y_train,n_clusters=DSLevel,max_iter=300,Plot=True,targetname=targetName) 
+    X_train_DS, y_train_DS = kMeansClusteringDS(X_train_relFeat,y_train,n_clusters=DSLevel,max_iter=300,Plot=True,targetname=targetName) 
 else: 
     raise ValueError("The down sampling method is incorrect. '{}' was given.".format(downSampler))
 
@@ -325,8 +335,8 @@ X_train_OS,y_train_OS = DoOverSampling(X_train_DS,y_train_DS,targetName,overSamp
 print("{} oversampling performed: From {} to {} data points".format(overSampler,y_train_DS[y_train_DS[targetName] != majorityValue].shape[0],y_train_OS[y_train_OS[targetName] != majorityValue].shape[0]))
 print("Imbalance Ratio:{}".format(round(np.sum(y_train_OS[targetName] == 1)/np.sum(y_train_OS[targetName] == 0),2)))
 
-
 #%% 
+
 # ---------  Hyper Parameter Tuning  ---------
 """ Only the DS data is used to HP tune as the OS should be done after the val-train split in the k-CV. 
 The values deciding the level of OS are used to make the OS identical to the one used in the remainder of this script. """
@@ -337,6 +347,7 @@ else:
 saveName_HPTuning="HPTuning{}_{},{}_{}={},{}={}_{}".format(HPTypeStr,dataSplitName,targetName[0:3],downSampler,DSLevel,overSampler,OSLevel,HPTuningName)
 if optimizeHyperParameters:  
     X_train_forHPTuning = pd.concat([X_train_DS,X_UTM_train_DS],axis=1) # Adds the coordinates to the training and testing data to be used on the fault Clustering in the k-CV
+    X_test_forHPTuning  = pd.concat([X_test_relFeat,X_UTM_test],axis=1)
     from MLFunctions.HyperParameterTuning import modelClassifierDic, modelRegressorDic, modelClassifierDic_fast, modelRegressorDic_fast
     if modelType == "Classification": 
         if fastHPTuning:
@@ -348,13 +359,19 @@ if optimizeHyperParameters:
             modelDic = modelRegressorDic_fast 
         else:
             modelDic = modelRegressorDic
-    HPTuning = kCrossValidation(X_train_forHPTuning, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN,pipeLength_total,ID_train_DS,ID_test, X0_test=X_test_relFeat,y0_test=y_test,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename=saveName_HPTuning)
+    if splitDataByTime:
+        X_val_forHPTuning = pd.concat([X_val_relFeat,X_UTM_val],axis=1) 
+        HPTuning = PerformHPTuning(X_train_forHPTuning, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN,pipeLength_total,ID_train_DS,ID_test, X0_test=X_test_forHPTuning,y0_test=y_test, performGridSearch=True, X0_val=X_val_forHPTuning, y0_val=y_val, val_ID=ID_val,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename=saveName_HPTuning) 
+    else: 
+        HPTuning = PerformHPTuning(X_train_forHPTuning, y_train_DS,modelType,targetName,overSampler,desiredImbRatio,OSTimes,X_GAN,pipeLength_total,ID_train_DS,ID_test, X0_test=X_test_forHPTuning,y0_test=y_test,fileinfo=fileInfo,modeldic=modelDic,n_folds=nFolds,randstate=randState,savename=saveName_HPTuning)
 else: 
     if updateHpOfBestModel: # If this is True, then HPTuning must be defined, which is the reason for the logic setup
         try:
             HPTuning = pd.read_excel("{}\\Broenshoej\\k-CrossValidation\\{}.xlsx".format(resultsLoc,saveName_HPTuning))
         except: 
-            raise ValueError("HPTuning with these parameters has not been performed before. Please set optimizeHyperParameters to True.")
+            raise ValueError("HPTuning with these parameters has not been performed before or the file is unable to be loaded. Please set optimizeHyperParameters to True or check that the file is not open.")
+
+
 
 if updateHpOfBestModel != False:  # Automatically updates the bestModel to contain the best hyper parameters: 
     bestModel_forAUC, bestModel_forRecall, bestModel_forPrecision, bestModel_overall = DetermineBestModel(HPTuning)
@@ -376,6 +393,8 @@ if updateHpOfBestModel != False:  # Automatically updates the bestModel to conta
 # ---------  Plots Results of 'bestModel'  ---------
 X_train_final, y_train_final = X_train_OS,y_train_OS
 X_test_final, y_test_final = X_test_relFeat, y_test
+if splitDataByTime: 
+    X_val_final, y_val_final = X_val_relFeat, y_val
 
 if modelType == "Classification":
     # Vaelger hvilke features der skal plottes efter senere: 
@@ -414,15 +433,21 @@ if modelType == "Classification":
     PlotLvsFCapture(pipeLength_total,y_test_final_withID,y_pred_perc_df, savename=saveName)
 
     # aendrer cut-off threshold (phi), og plotter CM igen. 
-    phi, CMvalues_df = DeterminePhiAt50Precision(y_pred_perc_df, y_test_final, plot = False)
-    y_pred_phi = np.ones(len(y_pred))
-    y_pred_phi[y_pred_perc < phi] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
-    ConfusionMatrix(y_test_final,y_pred_phi, savename = saveName + ",phi=".format(phi),title="Recall",Normalise=None)
-    
+    phi_bestPrecision, phi_50Precision,phi_bestF1, CMvalues_df = DeterminePhiAt50Precision(y_pred_perc_df, y_test_final, plot = True)
+    y_pred_phiBestPrecision = np.ones(len(y_pred))
+    y_pred_phi50Precision = np.ones(len(y_pred))
+    y_pred_phiBestF1 = np.ones(len(y_pred))
+    y_pred_phiBestPrecision[y_pred_perc < phi_bestPrecision] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
+    y_pred_phi50Precision[y_pred_perc < phi_50Precision] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
+    y_pred_phiBestF1[y_pred_perc < phi_bestF1] = 0 # Changes the percentage at which a pipe is declared 'faulty' 
+    ConfusionMatrix(y_test_final,y_pred_phiBestPrecision, savename = saveName + ",phi={}".format(phi_bestPrecision),title="Phi",Normalise=None, phi=phi_bestPrecision)
+    # ConfusionMatrix(y_test_final,y_pred_phi50Precision, savename = saveName + ",phi={}".format(phi_50Precision),title="Phi",Normalise=None, phi=phi_50Precision)
+    ConfusionMatrix(y_test_final,y_pred_phiBestF1, savename = saveName + ",phi={}".format(phi_bestF1),title="Phi",Normalise=None, phi=phi_bestF1)
+
     # Plots the y_pred_perc Distribution: 
     y_havari_pred_perc = y_pred_perc[y_test_final[targetName] == 1]
     y_roer_pred_perc   = y_pred_perc[y_test_final[targetName] == 0]
-    Ploty_percDistribution(y_roer_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0)
+    Ploty_percDistribution(y_roer_pred_perc,y_havari_pred_perc,lowerylim = 0.0,lowerxlim=0,phi=phi_bestF1*100)
 
     # Plotter laengde-distributionen af havari-roer: 
     # PlotDistributionOfDfColumn(X_havari,'Length',plotType='Bar',title="Length Distribution in Faults", barIntervals=np.linspace(0,0.7,11))
