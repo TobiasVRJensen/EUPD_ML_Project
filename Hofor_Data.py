@@ -54,6 +54,9 @@ rørRoadType_Brøns = pd.read_excel("{}\\Kortdata\\RoadType\\RoadType_Rør_Brøn
 rørLandUse_Brøns = pd.read_excel("{}\\Kortdata\\LandUse\\LandUse_Rør_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-7]]
 rørAnaerobicDepth_Brøns = pd.read_excel("{}\\Kortdata\\DepthToAnaerobicSoilConditions\\AnaerobicDepth_Rør_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-1]]
 
+rørRoadType_Brøns = rørRoadType_Brøns.drop_duplicates(subset='SYSTEM_ID') # Removes doublivates that happen for some reason (Propably likely due to some QGIS error)...
+rørLandUse_Brøns = rørLandUse_Brøns.drop_duplicates(subset='SYSTEM_ID') # Removes doublivates that happen for some reason (Propably likely due to some QGIS error)...
+
 havariRain_Brøns = pd.read_excel("{}\\Havari+Rain_Brøns.xlsx".format(GisLoc)).iloc[:,[0,-3,-2,-1]]
 havariGWL_Brøns = pd.read_excel("{}\\Havari+GWLevel_Brøns.xlsx".format(GisLoc)).iloc[:,[0,-1]]
 havariSoilCG_Zink_Brøns = pd.read_excel("{}\\Havari+SoilCG_Zink_Brøns.xlsx".format(GisLoc)).iloc[:,[0,-1]]
@@ -89,16 +92,17 @@ operationalData = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\CSV_Temperature and
 havariTopography_Brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Havari+Topo_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-7]]
 rørTopography_Brøns = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Rør+Topo_Brøns.xlsx".format(folderLoc)).iloc[:,[0,-7]]
 
-#%%
 endPipesData = pd.read_excel("{}\\HOFOR\\Data Broenshoej\\Joints_Subpipe_Connections.xlsx".format(folderLoc))
 
 # Concatenating all relevant comtaminants 
 rørSoilCG_Brøns = rørSoilCG_Zink_Brøns
 havariSoilCG_Brøns = havariSoilCG_Zink_Brøns
 
+
 BrønsRørList = [rørRain_Brøns,rørGWL_Brøns,rørSoilCG_Brøns,rørGWCG_Bly_Brøns,rørGWCG_Cyanide_Brøns,rørGWCG_Detergents_Brøns,rørGWCG_Pesticides_Brøns,rørSoilType_Brøns,rørRoadType_Brøns,rørLandUse_Brøns,rørAnaerobicDepth_Brøns]
 BrønsHavariList = [havariRain_Brøns,havariGWL_Brøns,havariSoilCG_Brøns,havariGWCG_Bly_Brøns,havariGWCG_Cyanide_Brøns,havariGWCG_Detergents_Brøns,havariGWCG_Pesticides_Brøns,havariSoilType_Brøns,havariRoadType_Brøns,havariLandUse_Brøns,havariAnaerobicDepth_Brøns]
 
+# rørRoadType_Brøns,rørLandUse_Brøns
 
 #%% 
 # ------------  Funktioner  -------------
@@ -256,12 +260,11 @@ rørData_KBH_Jord, rørData_KBH_Hus = WorkingWithLedningsData("LedningVF_KBH")
 rørData_Brøns_Jord, rørData_Brøns_Hus = WorkingWithLedningsData("Ledninger_Brøns")
 
 
-
-
 #%% 
 # ---------  Adds the GIS data to the data set  --------- 
 GIS_Rør_Brøns = CombineDFonID(BrønsRørList)
 GIS_Havari_Brøns = CombineDFonID(BrønsHavariList)
+print(GIS_Rør_Brøns['SYSTEM_ID'].value_counts())
 
 # Manipulates the GWL: 
 GIS_Rør_Brøns = GWLvsPipeDepth(GIS_Rør_Brøns,lowerlimit=False)
@@ -422,183 +425,28 @@ havariData_Brøns_withnFaults["nFaults"] = 0
 # ---------  Operational Data  ---------
 """The goal is to implement the operational data, thu sallocating a water temperature and pressure to each pipe in the network. 
 """ 
+# Prepares the operationsal data: 
+operationalData_handled = dfStr2dfFloat(operationalData) # Makes sure all floats are acutally understood as float type 
+operationalData_handled = HandleOperationalData(operationalData) # Removes bad data from the data set (e.g. data where the delivered heat=0)
+operationalData_seasons = SplitOperationalData(operationalData_handled.copy()) # Splits the operational data into quarters.
 
-def CalcWeightedAverage(df0, cWeights:str='Length', cValues:str='InnerDia'):
-    """Calculate the weighted average of the values in the column 'cValues' dependent on the weights in 'cWeights'
-    Input: 
-    df0: dataframe with the columns 'cWeights' and 'cValues'
+# Adds Pressure to the data set
+minP = 0.5  # Minimum pressure at furthest consumer 
+rørAbsolutePressure_brøns, havariAbsolutePressure_brøns = rørData_Brøns_withnFaults.copy(), havariData_Brøns_withnFaults.copy()
+for seasonName in operationalData_seasons.keys(): 
+    operationalData_season = operationalData_seasons[seasonName]
+    supplyP_season = operationalData_season['Supply pressure [bar]'].mean() # Average Supply pressure for each quarter
+    rørAbsolutePressure_brøns = SimpleLinearPressureApprox(rørAbsolutePressure_brøns,rørSupplyDist_brøns, minP=minP,supplyPressure=supplyP_season, cname_suffix=seasonName)
+    rørAbsolutePressure_brøns = AddHeightDiffToPressure(rørAbsolutePressure_brøns.copy(),rørTopography_Brøns,cPressure='Pressure_{}'.format(seasonName))
+    havariAbsolutePressure_brøns = SimpleLinearPressureApprox(havariAbsolutePressure_brøns,havariSupplyDist_brøns, minP=minP,supplyPressure=supplyP_season, cname_suffix=seasonName)
+    havariAbsolutePressure_brøns = AddHeightDiffToPressure(havariAbsolutePressure_brøns.copy(),havariTopography_Brøns,cPressure='Pressure_{}'.format(seasonName))
 
-    Output: Float describing the weighted average. 
-    """
-    weighted_avg = (df0[cValues] * df0[cWeights]).sum() / df0[cWeights].sum()
-    return weighted_avg
+rørData_Brøns_withSupplyDist, havariData_Brøns_withSupplyDist = pd.merge(rørData_Brøns_withnFaults,rørSupplyDist_brøns[['ID','SupplyDist']],how='left',on='ID') , pd.merge(havariData_Brøns_withnFaults,havariSupplyDist_brøns[['ID','SupplyDist']],how='left',on='ID')
+rørData_Brøns_withP, havariData_Brøns_withP = pd.merge(rørData_Brøns_withSupplyDist,rørAbsolutePressure_brøns[['ID','Pressure_Winter','Pressure_Spring','Pressure_Summer','Pressure_Fall']],how='left',on='ID') , pd.merge(havariData_Brøns_withSupplyDist,havariAbsolutePressure_brøns[['ID','Pressure_Winter','Pressure_Spring','Pressure_Summer','Pressure_Fall']],how='left',on='ID')
+rørData_Brøns_withP[['ID','X_UTM','Y_UTM','Pressure_Winter','Pressure_Spring','Pressure_Summer','Pressure_Fall']].to_excel("{}\\HOFOR\\Data Broenshoej\\Rør_AbsolutePressures_brøns.xlsx".format(folderLoc),index=False)
 
-def CalcTemperatureLoss(supplyDistances,T_supply:float=90,T_ambient:float=8.8,lambda_i:float=0.027,D_i_avg:float=213,D_p_avg:float=55.6): 
-    """Calculates the water temperature in every pipe in the network depending on the distance from the supply point, and the temperature 
-    of the supply water. 
-    
-    Input: 
-    supplyDistances: df describing the supply distances for each pipe in [m]. Must have the columns 'ID' and 'SupplyDist'.
-    T_supply: The temperature of the water at the suppyl point in [degC]
-    T_ambient: The temperature of the surrounding soil in [degC]
-    lambda_i: Coefficient of heat conduction of the insulation material in [W/(K*m)]
-    D_i: Diameter of the insulation and inner metal pipe in [mm]
-    D_p: Diameter of the internal metal pipe in the DH pipe in [mm]
-    
-    output: 
+# StationIDs = [316964704,2410285,333053066] # In order from station 1-3
 
-    """
-    q_loss = (T_supply-T_ambient)*2*np.pi*lambda_i/(np.log(D_i_avg/D_p_avg)) # Unit: [W/m]
-    energyLossPipes = q_loss * supplyDistances['SupplyDist'] # Unit: [W]
-    c_water70 = 3925.2 # Unit: [J/(kg*K)] TODO: Exchange this with a formula depending on the Temp
-    rho_water70 = 977.63 # Unit: [kg/m^3] TODO: Exchange this with a formula depending on the Temp
-    dV = 1*np.pi * (D_p_avg/2)**2 * 1/1000**2 # Unit: [m^3] Unit volume of water used to convert J -> K
-    dm = dV * rho_water70 # Unit [kg]
-    dT = energyLossPipes/(c_water70*dm) # Unit: [degC] Change in temperature from the supply point
-    waterTemp = T_supply - dT 
-    supplyDistances["WaterTemp"] = waterTemp
-
-    dic = {'Smørumvej':{
-        'ID':316964704,
-        'cTemp':'Smørumvej 197  [°C]',
-        'cPressure':'Smørumvej 197 [bar]'
-        },
-        'Frederikssundsvej':{
-        'ID':2410285,
-        'cTemp':'Frederikssundsvej 203 [°C]',
-        'cPressure':'Frederikssundsvej 203 [bar]'
-        },
-        'Muldager':{
-        'ID':333054174,
-        'cTemp':'Muldager 20 [°C]',
-        'cPressure':'Muldager 20 [bar]'
-        }
-    }
-    
-
-
-    return supplyDistances.copy()
-
-def HandleOperationalData(operationalData0): 
-    """Removes all data where the network was not running as it should have. This includes
-    any instance, where the added heat to the network is 0, as the network likely got 
-    energy from another source, which do not have access to. 
-
-    Input: 
-    operationalData0: df bescribing the temperature and pressure at the supply points as
-    well as 3 measurement points. Additionally, the heat added to the network by the 
-    supply point is shown in the column 'Delivered heat [MW]'. 
-    
-    Output: 
-    operationalData0
-    """
-    operationalData0 = operationalData0[~operationalData0["Delivered heat [MW]"].isin([-0.1,0.0,0])]
-    operationalData0 = operationalData0.dropna() # Removes blancks
-    operationalData0 = operationalData0[~operationalData0["Delivered heat [MW]"].apply(lambda x: isinstance(x, str))] # Removes all str values from Delivered Heat as they are above 1000MW in June which makes no sense. 
-
-    return operationalData0.copy()
-
-def SplitOperationalData(OpData0):
-    """
-    Splits the input DataFrame into four new DataFrames containing data from each quarter.
-    Adds a row at the end of each DataFrame showing the average of each column.
-    
-    Input:
-    OpData0 (pd.DataFrame): Input DataFrame containing a 'Timestamp' column with datetime data in the format 'dd-mm-yyyy HH:MM:SS'.
-                       The rest of the columns contain float values.
-    
-    Output:
-    dict: A dictionary with keys 'Q1', 'Q2', 'Q3', 'Q4' and values as DataFrames for each quarter.
-    """
-    # Convert 'Timestamp' column to datetime
-    OpData0['Timestamp'] = pd.to_datetime(OpData0['Timestamp'], format='%d-%m-%Y %H:%M:%S')
-    
-    # Extract the quarter from the 'Timestamp' column
-    OpData0['Quarter'] = OpData0['Timestamp'].dt.quarter
-    
-    # Iterate over each quarter (1 to 4)
-    dfs = {}
-    for quarter in range(1, 5):
-        # Filter the dataframe for the current quarter
-        quarter_df = OpData0[OpData0['Quarter'] == quarter].copy()
-        
-        # Drop the 'Quarter' column
-        quarter_df.drop(columns=['Quarter'], inplace=True)
-        
-        # Calculate the average for each column except 'Timestamp' and append it as a new row
-        averages = quarter_df.drop(columns=['Timestamp']).mean()
-        averages['Timestamp'] = 'Average'
-        quarter_df = pd.concat([quarter_df, pd.DataFrame([averages])],axis=0, ignore_index=True)
-        
-        # Store the dataframe in the dictionary
-        dfs[f'Q{quarter}'] = quarter_df
-    
-    return dfs
-#%%
-def DetermineTopography(topographyData,cMAX='MAXKOTE', supplyHeight:float=17.5): 
-    """Takes a df with the column 'MAXKOTE' and returns a new df which describes the height difference
-    between the supply point and the pipe. 
-    Negative height diffs means the pipe is located lower than the supply point. """
-    heightDiffs = topographyData[cMAX] - supplyHeight
-    dfout = pd.concat([topographyData.iloc[:,0],heightDiffs],axis=1)
-    dfout.columns = ['ID','Height_Diff']
-    return dfout
-
-
-
-rørHeightsDiffs = DetermineTopography(rørTopography_Brøns)
-
-
-def LinearPressureApprox(supplyDist_rør,supplyDist_havari,endPipeData,dP=2.0,supplyPressure=4.5):
-    """Makes a linear approximation of the pressure drop in the pipes (which is what is expected). 
-    The Linear approximation is performed based on the average supply distance to the consumers, as 
-    well as the total pressure drop over the network and the absolute supply pressure.  
-
-    Input:
-    supplyDistData: df with the columns: "ID" of the pipe, "SupplyDist" describin the the distance 
-    from all pipes to the supply point through the network, 'X_UTM', 'Y_UTM' 
-    endPipeData: df of all the pipes, describin the number of joints that pipe has due to 
-    connections to other pipes. If nJoints=1, then it must be a pipe located at a consumer. Must
-    have the columns: 'ID' and 'nJoints' 
-    dP: Total supplied pressure to the network from the supply station. 
-    supplyPressure: Absolute pressure measured at the supply station. 
-
-    Return: The absolute pressure approximations for rør and havari. 
-    """
-    endPipeIDs = endPipeData[endPipeData['nJoints'] == 1]['ID']
-    endPipes = pd.merge(endPipeIDs,supplyDist_rør,on='ID',how='inner')
-    endPipes.to_excel("{}\\HOFOR\\Data Broenshoej\\EndPipes.xlsx".format(folderLoc),index=False)
-    averageSupply2ConsumerDist = np.mean(endPipes["SupplyDist"])
-    dPpermeter = dP/averageSupply2ConsumerDist
-    rørAbsolutePressure_brøns, havariAbsolutePressure_brøns = supplyDist_rør.copy() , supplyDist_havari.copy()
-    rørAbsolutePressure_brøns["Pressure"] = supplyPressure - rørAbsolutePressure_brøns["SupplyDist"] * dPpermeter
-    havariAbsolutePressure_brøns["Pressure"] = supplyPressure - havariAbsolutePressure_brøns["SupplyDist"] * dPpermeter
-    return rørAbsolutePressure_brøns, havariAbsolutePressure_brøns
-
-### Tilføjer Pressure til data sættet ud fra 
-
-rørAbsolutePressure_brøns, havariAbsolutePressure_brøns = LinearPressureApprox(rørSupplyDist_brøns,havariSupplyDist_brøns,endPipesData, dP=2,supplyPressure=4.5)
-rørAbsolutePressure_brøns.to_excel("{}\\HOFOR\\Data Broenshoej\\Rør_AbsolutePressures_brøns_Split.xlsx".format(folderLoc),index=False)
-rørData_Brøns_withP = pd.merge(rørData_Brøns_withnFaults,rørAbsolutePressure_brøns,how='left',on='ID')
-havariData_Brøns_withP = pd.merge(havariData_Brøns_withnFaults,havariAbsolutePressure_brøns,how='left',on='ID')
-
-
-#%%
-# averageInnerDia = CalcWeightedAverage(rørData_Brøns_withnFaults)
-
-# operationalData_handled = dfStr2dfFloat(operationalData)
-# operationalData_handled = HandleOperationalData(operationalData)
-
-# operationalData_Quarters = SplitOperationalData(operationalData_handled.copy())
-
-# StationIDs = [316964704,2410285,333054174] # In order from station 1-3
-
-# rørSupplyDist_brøns_withT = CalcTemperatureLoss(rørSupplyDist_brøns,T_supply=76.9)
-# havariSupplyDist_brøns_withT = CalcTemperatureLoss(havariSupplyDist_brøns,T_supply=76.9)
-# rørSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Broenshoej\\rørSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
-# havariSupplyDist_brøns_withT.to_excel("{}\\HOFOR\\Data Broenshoej\\havariSupplyDist_brøns_withT.xlsx".format(folderLoc),index=False)
-# TODO: 
-# - Afvent Hofors svar 
 
 
 #%% 
